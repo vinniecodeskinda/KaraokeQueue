@@ -12,13 +12,13 @@ export const supabase = isConfigured
     })
   : null;
 
-/** Render a friendly setup message instead of a blank page. */
-export function renderNotConfigured(root) {
-  root.innerHTML = `
-    <div class="setup-msg">
-      <h1>Almost there 🎤</h1>
-      <p>Set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code>
-         (in <code>.env</code> locally, or in Cloudflare Pages environment variables),
-         then rebuild.</p>
-    </div>`;
+/** Small banner shown when running on the in-browser demo backend. */
+export function showDemoBanner() {
+  const el = document.createElement('div');
+  el.className = 'demo-banner';
+  el.innerHTML =
+    '<b>Demo mode</b> · queue lives in this browser only. ' +
+    'Set <code>SUPABASE_URL</code> + <code>SUPABASE_ANON_KEY</code> to go live.';
+  document.body.append(el);
+  document.body.classList.add('demo');
 }

@@ -27,6 +27,13 @@ Built to run entirely on free tiers: **Cloudflare Pages** (static site + one Pag
 
 ## Setup
 
+### 0. Try it with zero setup (demo mode)
+```bash
+npm install
+npm run dev
+```
+Without Supabase keys, the app uses an in-browser demo backend ([`src/lib/backend-demo.js`](src/lib/backend-demo.js)). Open `/host/` and `/` in two tabs of the **same browser**. They stay in sync through `BroadcastChannel`. A yellow banner shows you're in demo mode. Phones on other devices won't sync in demo mode, because that needs Supabase.
+
 ### 1. Supabase (free tier)
 1. Create a project at [supabase.com](https://supabase.com).
 2. **SQL Editor → New query**, paste [`supabase/schema.sql`](supabase/schema.sql), and run it. This creates the tables, policies, RPCs and Realtime publication, and seeds 4 demo songs.

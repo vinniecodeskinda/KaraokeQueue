@@ -1,19 +1,16 @@
 import QRCode from 'qrcode';
 import '../styles/base.css';
 import '../styles/host.css';
-import { isConfigured, renderNotConfigured } from '../lib/supabase.js';
-import { subscribeToQueue } from '../lib/queue-api.js';
+import { showDemoBanner } from '../lib/supabase.js';
+import { isDemo, subscribeToQueue } from '../lib/queue-api.js';
 import { createPlayer } from './youtube-player.js';
 import { QueueController } from './queue-controller.js';
 import { escapeHtml } from '../lib/dom.js';
 
 const $ = (id) => document.getElementById(id);
 
-if (!isConfigured) {
-  renderNotConfigured($('app'));
-} else {
-  init();
-}
+if (isDemo) showDemoBanner();
+init();
 
 function init() {
   renderJoinCode();

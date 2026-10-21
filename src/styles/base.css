@@ -36,17 +36,25 @@ button {
 button:disabled { opacity: 0.5; cursor: default; }
 button.secondary { background: var(--surface-2); color: var(--text); }
 
-.setup-msg {
-  max-width: 34rem;
-  margin: 15vh auto;
-  padding: 0 16px;
-  line-height: 1.6;
+.demo-banner {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 0.35em 0.9em;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #1b1533;
+  font-size: 0.78rem;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0.92;
 }
-.setup-msg code {
-  background: var(--surface-2);
-  padding: 0.1em 0.4em;
-  border-radius: 6px;
-}
+.demo-banner code { font-size: 0.95em; }
+body.guest.demo { padding-top: 34px; }
 
 .toast {
   position: fixed;

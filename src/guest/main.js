@@ -1,7 +1,8 @@
 import '../styles/base.css';
 import '../styles/guest.css';
-import { isConfigured, renderNotConfigured } from '../lib/supabase.js';
+import { showDemoBanner } from '../lib/supabase.js';
 import {
+  isDemo,
   fetchActiveQueue,
   requestSong,
   requestYoutubeSong,
@@ -28,11 +29,8 @@ let myRequestIds = new Set(store.get('karaoke.requests', []));
 let catalogResults = [];
 let ytResults = [];
 
-if (!isConfigured) {
-  renderNotConfigured($('app'));
-} else {
-  init();
-}
+if (isDemo) showDemoBanner();
+init();
 
 function init() {
   renderNameChip();
