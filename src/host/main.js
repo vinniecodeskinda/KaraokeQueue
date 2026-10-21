@@ -94,11 +94,8 @@ async function start(room, hostKey) {
     (status) => ($('conn').dataset.status = status),
   );
 
+  // Skip is button-only: a single-letter hotkey on the TV is too easy to hit by accident.
   $('skip-btn').addEventListener('click', () => controller.skip());
-  document.addEventListener('keydown', (e) => {
-    if (isTyping(e)) return;
-    if (e.key === 'n' || e.key === 'N') controller.skip();
-  });
 
   $('start-overlay').remove();
   await controller.refresh();
