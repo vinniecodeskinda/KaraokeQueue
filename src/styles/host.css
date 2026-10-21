@@ -184,13 +184,17 @@ body.host { overflow: hidden; height: 100vh; }
   align-items: center;
   justify-content: center;
   gap: 1rem;
-  background: rgb(15 11 30 / 0.94);
+  /* Fully opaque: the idle screen (with its own big room code) sits right
+     behind this, and letting it show through reads as a doubled screen. */
+  background: radial-gradient(circle at 50% 40%, var(--surface-2), var(--bg) 70%);
   text-align: center;
   padding: 16px;
 }
-.start-overlay button { font-size: 1.6rem; padding: 0.8em 1.8em; }
+.start-overlay h1 { margin: 0; font-size: 2.2rem; }
+.start-overlay button { font-size: 1.6rem; padding: 0.8em 1.8em; margin-top: 0.5rem; }
 .start-overlay p { color: var(--muted); margin: 0; }
-.start-overlay .overlay-code { font-size: 3rem; font-weight: 800; letter-spacing: 0.18em; color: var(--text); }
+.start-overlay .overlay-label { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.85rem; }
+.start-overlay .overlay-code { font-size: 3.5rem; font-weight: 800; letter-spacing: 0.18em; color: var(--text); margin-top: -0.6rem; }
 
 /* Portrait screens / small windows: stack the sidebar under the player. */
 @media (max-width: 900px) {
