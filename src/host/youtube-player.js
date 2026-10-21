@@ -31,7 +31,7 @@ export const YT_ERRORS = {
  * Create a player inside `elementId` (the element is replaced by an iframe).
  * Resolves once the player is ready to accept commands.
  */
-export async function createPlayer(elementId, { onEnded, onError, onPlaying } = {}) {
+export async function createPlayer(elementId, { onEnded, onError, onPlaying, onChange } = {}) {
   const YT = await loadYouTubeApi();
   return new Promise((resolve) => {
     const player = new YT.Player(elementId, {
@@ -50,7 +50,9 @@ export async function createPlayer(elementId, { onEnded, onError, onPlaying } = 
         onStateChange: (e) => {
           if (e.data === YT.PlayerState.ENDED) onEnded?.();
           else if (e.data === YT.PlayerState.PLAYING) onPlaying?.();
+          onChange?.();   // play/pause/buffer — remotes show the new state
         },
+        onPlaybackRateChange: () => onChange?.(),
         onError: (e) => onError?.(e.data, YT_ERRORS[e.data] ?? 'Playback error'),
       },
     });

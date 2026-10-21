@@ -22,6 +22,7 @@ import {
   shareJoinLink,
 } from '../lib/rooms.js';
 import { startHeartbeat } from '../lib/host-session.js';
+import { mountRemote, SPEEDS } from '../lib/remote.js';
 import { mountSongSearch } from '../lib/song-search.js';
 import { currentName, promptName, saveName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
@@ -39,6 +40,9 @@ let live;         // { unsubscribe, track } for the room channel
 let controller;   // created on "Start the party"
 let player;
 let stopHeartbeat = () => {};
+let updateRemote = () => {};
+let loadedRowId = null;      // queue row currently on screen
+let resetSpeed = false;      // new song → back to normal speed once it starts
 
 if (isDemo) showDemoBanner();
 init();
@@ -122,9 +126,19 @@ async function init() {
   });
 
   $('people').addEventListener('click', onKickClick);
+  updateRemote = mountRemote($('tv-remote'), { onAction: applyAction, compact: true });
+  updateRemote({ active: false });
   live = subscribeToRoom(
     room.id,
-    { onQueue: () => controller?.refresh(), onPresence: renderPeople },
+    {
+      onQueue: () => controller?.refresh(),
+      onPresence: renderPeople,
+      // Phones' Remote tab: they send actions, and ask for state when opened.
+      onBroadcast: (event, payload) => {
+        if (event === 'control') applyAction(payload?.action);
+        else if (event === 'hello') sendState();
+      },
+    },
     (status) => ($('conn').dataset.status = status),
     {
       key: me.memberId,
@@ -142,6 +156,13 @@ async function start() {
   player = await createPlayer('player', {
     onEnded: () => controller?.handleEnded(),
     onError: (code, reason) => controller?.handleError(code, reason),
+    onPlaying: () => {
+      if (resetSpeed) {
+        resetSpeed = false;
+        player.setPlaybackRate(1);
+      }
+    },
+    onChange: sendState,
   });
 
   controller = new QueueController({
@@ -152,11 +173,72 @@ async function start() {
     onNotice: toast,
   });
 
-  // Skip is button-only: a single-letter hotkey on the TV is too easy to hit by accident.
-  $('skip-btn').addEventListener('click', () => controller.skip());
-
+  // Controls are button-only: single-letter hotkeys on the TV are too easy to hit by accident.
   $('start-overlay')?.remove();
   await controller.refresh();
+  sendState();
+}
+
+// ------------------------------------------------------------- remote
+
+/** Apply a remote action (from the TV's own buttons or any phone). */
+function applyAction(action) {
+  if (!player || !controller?.state.playing) return;
+  switch (action) {
+    case 'restart':
+      player.seekTo(0, true);
+      player.playVideo();
+      break;
+    case 'toggle':
+      if (isPlaying()) player.pauseVideo();
+      else player.playVideo();
+      break;
+    case 'skip':
+      controller.skip();
+      break;
+    case 'slower':
+    case 'faster': {
+      const rates = player.getAvailablePlaybackRates?.() ?? SPEEDS;
+      const options = SPEEDS.filter((r) => rates.includes(r));
+      const i = options.indexOf(player.getPlaybackRate());
+      const next = options[Math.max(0, Math.min(options.length - 1, (i === -1 ? options.indexOf(1) : i) + (action === 'faster' ? 1 : -1)))];
+      if (next) player.setPlaybackRate(next);
+      break;
+    }
+    case 'mute':
+      if (player.isMuted()) player.unMute();
+      else player.mute();
+      break;
+    case 'voldown':
+    case 'volup':
+      player.unMute();
+      player.setVolume(Math.max(0, Math.min(100, player.getVolume() + (action === 'volup' ? 10 : -10))));
+      break;
+    default:
+      return;
+  }
+  // Volume/mute have no player event — report state once it has applied.
+  setTimeout(sendState, 300);
+}
+
+const isPlaying = () => [1, 3].includes(player?.getPlayerState());   // playing or buffering
+
+function playerState() {
+  if (!player || !controller?.state.playing) return { active: false };
+  return {
+    active: true,
+    playing: isPlaying(),
+    rate: player.getPlaybackRate(),
+    volume: Math.round(player.getVolume()),
+    muted: player.isMuted(),
+  };
+}
+
+/** Update the TV's buttons and tell every phone remote. */
+function sendState() {
+  const state = playerState();
+  updateRemote(state);
+  live?.send('state', state);
 }
 
 /** Host passed to someone else (this screen was offline too long). */
@@ -178,6 +260,11 @@ function lostHost() {
 }
 
 function render({ playing, upNext }) {
+  if ((playing?.id ?? null) !== loadedRowId) {
+    loadedRowId = playing?.id ?? null;
+    resetSpeed = true;   // each singer starts at normal speed
+    setTimeout(sendState, 300);
+  }
   $('idle').hidden = Boolean(playing);
   $('now-playing').hidden = !playing;
   if (playing) {

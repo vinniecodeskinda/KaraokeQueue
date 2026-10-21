@@ -18,7 +18,12 @@ No sign-in anywhere. Guests only need the code or link.
 - **Rooms:** an optional room name (default "<host>'s Room") and an optional password. Without a password, the room is open to anyone with the code.
 - **People:** a live list of who's connected right now (Supabase Realtime Presence). The host can **Remove** anyone. Their waiting songs are dropped and that device can't rejoin.
 - **Size:** up to 150 people per room. On Supabase's free plan, the real ceiling is about **200 open connections across all rooms at once**; every open phone or TV is one.
-- **Search:** both screens have a **Prioritize karaoke versions** switch. It ranks karaoke/lyric versions first and adds "karaoke" to YouTube searches.
+- **Search:** YouTube only, on both screens. It runs when you press Search or Enter. Each search uses YouTube API quota: about **100 searches/day** on the free tier, and repeated searches are cached for 24h.
+  - The **Prioritize karaoke versions** switch adds "karaoke" to the search and ranks karaoke/lyric versions first.
+  - Songs people pick are still saved in the `songs` table, because the queue needs them, but there's no browsable catalog.
+- **Playback controls:** on the TV sidebar and in every phone's **Remote** tab: Start over, Pause/Play, Skip, speed (0.5×–1.5×, resets to 1× for each new song), Mute, and Volume −/+.
+  - Phones send commands over Supabase Realtime Broadcast, and the TV reports its state back.
+  - Key/pitch change isn't possible with YouTube embeds, because the audio can't be reached from the page. Searching for "lower key karaoke" versions is the workaround.
 
 Built to run entirely on free tiers: **Cloudflare Pages** (static site + one Pages Function) and **Supabase** (Postgres + Realtime). There's no server to keep running.
 

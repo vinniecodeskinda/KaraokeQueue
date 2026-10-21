@@ -214,12 +214,14 @@ export async function searchYoutube(term, { karaoke = true } = {}) {
  *  - Realtime Presence → onPresence(people): who is connected *right now*.
  *    Closing the app drops you from it within seconds; nothing is written
  *    to the database for joins/leaves.
+ *  - Realtime Broadcast → onBroadcast(event, payload): the live remote
+ *    (guests' Remote tab ⇄ the TV player). Not stored anywhere.
  * `me` = { key: memberId, payload: { member_id, name, is_host, joined_at } }.
- * Returns { unsubscribe, track(payload) } — track() updates what others see.
+ * Returns { unsubscribe, track(payload), send(event, payload) }.
  */
 export function subscribeToRoom(
   roomId,
-  { onQueue = () => {}, onMembers = () => {}, onPresence = () => {} },
+  { onQueue = () => {}, onMembers = () => {}, onPresence = () => {}, onBroadcast = () => {} },
   onStatus = () => {},
   me = null,
 ) {
@@ -242,6 +244,7 @@ export function subscribeToRoom(
     .on('postgres_changes', { event: '*', schema: 'public', table: 'queue', filter }, queueChanged)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'members', filter }, membersChanged)
     .on('presence', { event: 'sync' }, () => onPresence(presenceList(channel.presenceState())))
+    .on('broadcast', { event: '*' }, ({ event, payload }) => onBroadcast(event, payload))
     .subscribe(async (status) => {
       onStatus(status);
       if (status === 'SUBSCRIBED') {
@@ -258,6 +261,7 @@ export function subscribeToRoom(
       payload = { ...payload, ...next };
       await channel.track(payload);
     },
+    send: (event, data = {}) => channel.send({ type: 'broadcast', event, payload: data }),
   };
 }
 

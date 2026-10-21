@@ -75,7 +75,11 @@ body.guest.demo, body.entry.demo { padding-top: 34px; }
 
 /* ---------------------------------------------------------- song search */
 
+.song-search .search { display: flex; gap: 8px; }
+.song-search .search-btn { flex: none; border-radius: var(--radius); }
 .song-search .search input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   font: inherit;
   font-size: 16px;            /* ≥16px stops iOS zooming on focus */
@@ -156,6 +160,43 @@ body.guest.demo, body.entry.demo { padding-top: 34px; }
 .yt-fallback { margin-top: 14px; text-align: center; }
 .yt-fallback[hidden] { display: none; }
 .yt-fallback .results { text-align: left; }
+
+/* ---------------------------------------------------------- remote */
+
+.remote { display: flex; flex-direction: column; gap: 8px; }
+.remote-row { display: flex; align-items: center; gap: 8px; }
+.remote-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0.55em 0.4em;
+  border-radius: 12px;
+  font-size: 0.8rem;
+}
+.remote-btn .icon { font-size: 1.3rem; line-height: 1.2; }
+.remote-readout {
+  flex: 1;
+  text-align: center;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.remote.inactive { opacity: 0.55; }
+.remote .transport .remote-btn { background: var(--accent); color: #fff; }
+
+/* Big, thumb-friendly buttons on the phone */
+.remote-full .remote-btn { padding: 0.9em 0.4em; font-size: 0.9rem; }
+.remote-full .remote-btn .icon { font-size: 1.8rem; }
+.remote-full .transport .remote-btn .icon { font-size: 2.2rem; }
+
+/* Compact strip in the TV sidebar */
+.remote-compact { gap: 6px; }
+.remote-compact .remote-row { gap: 6px; }
+.remote-compact .remote-btn { flex-direction: row; justify-content: center; gap: 6px; padding: 0.45em 0.4em; font-size: 0.78rem; }
+.remote-compact .remote-btn .icon { font-size: 1rem; }
+.remote-compact .remote-readout { font-size: 0.85rem; }
 
 /* ---------------------------------------------------------- name dialog */
 

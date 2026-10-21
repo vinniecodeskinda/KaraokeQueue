@@ -2,7 +2,6 @@ import '../styles/base.css';
 import '../styles/guest.css';
 import { showDemoBanner } from '../lib/supabase.js';
 import {
-  advanceQueue,
   isDemo,
   fetchActiveQueue,
   fetchMemberStatus,
@@ -26,6 +25,7 @@ import {
   shareJoinLink,
 } from '../lib/rooms.js';
 import { startHeartbeat, watchForHostHandover } from '../lib/host-session.js';
+import { mountRemote } from '../lib/remote.js';
 import { mountSongSearch } from '../lib/song-search.js';
 import { currentName, hasName, promptJoin, promptName, saveName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
@@ -39,8 +39,9 @@ let room;
 let me;               // { memberId, memberKey, name, joinedAt }
 let hostKey = null;   // set while this phone is the host
 let people = [];      // who's connected right now (presence)
-let playingRowId = null;
-let live = { unsubscribe() {}, track: async () => {} };
+let live = { unsubscribe() {}, track: async () => {}, send: async () => {} };
+let updateRemote = () => {};
+let stateTimeout;
 let stopHeartbeat = () => {};
 let stopWatching = () => {};
 
@@ -95,14 +96,30 @@ async function init() {
   renderNameChip();
   wireTabs();
   $('people-list').addEventListener('click', onKickClick);
-  $('np-skip').addEventListener('click', skipCurrent);
   $('open-tv').href = hostUrl(room.code);
 
   mountSongSearch($('search'), { onRequest: request, onError: toast });
 
+  // Remote tab: everyone can control the TV player.
+  updateRemote = mountRemote($('phone-remote'), {
+    onAction: (action) => live.send('control', { action }),
+  });
+  showRemoteState({ active: false });
+  document.querySelector('.tab[data-tab=remote]').addEventListener('click', requestState);
+
   live = subscribeToRoom(
     room.id,
-    { onQueue: refreshQueue, onMembers: checkMyStatus, onPresence: renderPeople },
+    {
+      onQueue: refreshQueue,
+      onMembers: checkMyStatus,
+      onPresence: (list) => {
+        renderPeople(list);
+        requestState();   // someone came or went — maybe the TV
+      },
+      onBroadcast: (event, payload) => {
+        if (event === 'state') showRemoteState(payload);
+      },
+    },
     () => {},
     {
       key: me.memberId,
@@ -209,13 +226,21 @@ function loseHost() {
   watchHandover();
 }
 
-async function skipCurrent() {
-  if (!hostKey || !playingRowId) return;
-  try {
-    await advanceQueue(room.id, hostKey, playingRowId, 'skipped');
-  } catch (err) {
-    toast(err.message);
-  }
+// ------------------------------------------------------------- remote
+
+/** Ask the TV for its player state; if nothing answers, it isn't running. */
+function requestState() {
+  live.send('hello', {});
+  clearTimeout(stateTimeout);
+  stateTimeout = setTimeout(() => showRemoteState({ active: false }), 2500);
+}
+
+function showRemoteState(state) {
+  if (state?.active) clearTimeout(stateTimeout);
+  updateRemote(state);
+  $('remote-hint').textContent = state?.active
+    ? 'Controls the TV for everyone.'
+    : 'Nothing is playing on the TV right now (or the TV player hasn’t been started).';
 }
 
 async function onKickClick(e) {
@@ -262,9 +287,7 @@ async function refreshQueue() {
     return;
   }
 
-  playingRowId = playing?.id ?? null;
   $('now-card').hidden = !playing;
-  $('np-skip').hidden = !(playing && hostKey);
   if (playing) {
     $('now-title').textContent = playing.song.title;
     $('now-meta').textContent = [playing.song.artist, `sung by ${playing.guest_name}`].filter(Boolean).join(' · ');

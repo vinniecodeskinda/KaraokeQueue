@@ -210,11 +210,12 @@ body.host { overflow: hidden; height: 100vh; }
 
 .host-controls {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.8rem 14px;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 0.7rem 14px;
   border-top: 1px solid var(--border);
 }
+#tv-remote { flex: 1; min-width: 0; }
 .conn { color: var(--warn); font-size: 1.2rem; }
 .conn[data-status='SUBSCRIBED'] { color: var(--ok); }
 .conn[data-status='CHANNEL_ERROR'],

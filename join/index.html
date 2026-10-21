@@ -18,7 +18,7 @@
       <h1 class="room-title" id="room-title"></h1>
 
       <section class="host-banner" id="host-banner" hidden>
-        <span>👑 You’re the host — you can skip songs and remove people.</span>
+        <span>👑 You’re the host — you can remove people.</span>
         <a class="btn small" id="open-tv">Open TV player here</a>
       </section>
 
@@ -26,7 +26,6 @@
         <span class="label">Now singing</span>
         <strong id="now-title"></strong>
         <span id="now-meta"></span>
-        <button type="button" class="small secondary np-skip" id="np-skip" hidden>Skip ⏭</button>
       </section>
 
       <section class="my-status" id="my-status" hidden></section>
@@ -39,6 +38,7 @@
         <button role="tab" class="tab" data-tab="people" aria-selected="false">
           People <span class="badge" id="people-count">0</span>
         </button>
+        <button role="tab" class="tab" data-tab="remote" aria-selected="false">Remote</button>
       </nav>
 
       <section class="panel" data-panel="search">
@@ -51,6 +51,11 @@
 
       <section class="panel" data-panel="people" hidden>
         <ul class="queue-list people-list" id="people-list"></ul>
+      </section>
+
+      <section class="panel" data-panel="remote" hidden>
+        <p class="remote-hint" id="remote-hint"></p>
+        <div id="phone-remote"></div>
       </section>
 
       <div class="toast" id="toast" role="status" hidden></div>

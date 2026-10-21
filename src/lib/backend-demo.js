@@ -237,8 +237,11 @@ export async function requestSong(memberKey, songId) {
   return row.id;
 }
 
-export async function requestYoutubeSong() {
-  throw new Error('YouTube search isn’t available in demo mode.');
+// Demo "YouTube": the built-in songs, shaped like real search results.
+export async function requestYoutubeSong(memberKey, { videoId }) {
+  const song = SONGS.find((s) => s.youtube_video_id === videoId);
+  if (!song) throw new Error('Song not found');
+  return requestSong(memberKey, song.id);
 }
 
 export async function advanceQueue(roomId, hostKey, finishedId = null, outcome = 'completed') {
@@ -265,8 +268,14 @@ export async function advanceQueue(roomId, hostKey, finishedId = null, outcome =
   return next?.id ?? null;
 }
 
-export async function searchYoutube() {
-  return { available: false, items: [] };
+export async function searchYoutube(term) {
+  const items = (await searchSongs(term)).map((s) => ({
+    videoId: s.youtube_video_id,
+    title: s.title,
+    channel: s.artist,
+    thumbnail: `https://i.ytimg.com/vi/${s.youtube_video_id}/default.jpg`,
+  }));
+  return { available: true, items };
 }
 
 // Presence, demo-style: each open tab writes a "last seen" entry every few
@@ -276,12 +285,15 @@ const PRESENCE_TTL_MS = 12_000;
 
 export function subscribeToRoom(
   roomId,
-  { onQueue = () => {}, onMembers = () => {}, onPresence = () => {} },
+  { onQueue = () => {}, onMembers = () => {}, onPresence = () => {}, onBroadcast = () => {} },
   onStatus = () => {},
   me = null,
 ) {
   const timers = {};
   let payload = me?.payload ?? null;
+  // Live remote messages go to the other tabs only (like Realtime Broadcast).
+  const remote = 'BroadcastChannel' in window ? new BroadcastChannel(`karaoke-demo-remote-${roomId}`) : null;
+  remote?.addEventListener('message', (e) => onBroadcast(e.data.event, e.data.payload));
 
   const readPresence = () => {
     const all = load(PRESENCE_KEY);
@@ -329,10 +341,12 @@ export function subscribeToRoom(
       bye();
       channel?.removeEventListener('message', onMessage);
       localListeners.delete(fire);
+      remote?.close();
     },
     track: async (next) => {
       payload = { ...payload, ...next };
       writePresence();
     },
+    send: async (event, data = {}) => remote?.postMessage({ event, payload: data }),
   };
 }
