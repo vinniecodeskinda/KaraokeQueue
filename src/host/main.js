@@ -109,7 +109,7 @@ function render({ playing, upNext }) {
   $('now-playing').hidden = !playing;
   if (playing) {
     $('np-guest').textContent = playing.guest_name;
-    $('np-song').textContent = `${playing.song.title} — ${playing.song.artist}`;
+    $('np-song').textContent = [playing.song.title, playing.song.artist].filter(Boolean).join(' — ');
   }
 
   $('up-next-count').textContent = upNext.length;
@@ -120,7 +120,7 @@ function render({ playing, upNext }) {
           (row) => `
           <li>
             <span class="song">${escapeHtml(row.song.title)}</span>
-            <span class="meta">${escapeHtml(row.song.artist)} · <b>${escapeHtml(row.guest_name)}</b></span>
+            <span class="meta">${row.song.artist ? `${escapeHtml(row.song.artist)} · ` : ''}<b>${escapeHtml(row.guest_name)}</b></span>
           </li>`,
         )
         .join('')

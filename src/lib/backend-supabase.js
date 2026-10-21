@@ -69,12 +69,12 @@ export async function requestSong(roomId, songId, guestName) {
 }
 
 /** Request a YouTube search result that isn't in the catalog yet. */
-export async function requestYoutubeSong(roomId, { videoId, title, artist }, guestName) {
+export async function requestYoutubeSong(roomId, { videoId, title, artist, channel }, guestName) {
   const { data, error } = await supabase.rpc('request_youtube_song', {
     p_room_id: roomId,
     p_video_id: videoId,
     p_title: title,
-    p_artist: artist ?? '',
+    p_artist: artist ?? channel ?? '',   // search results carry the uploader as `channel`
     p_guest_name: guestName,
   });
   if (error) throw friendly(error);

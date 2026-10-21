@@ -98,7 +98,7 @@ async function refreshQueue() {
   $('now-card').hidden = !playing;
   if (playing) {
     $('now-title').textContent = playing.song.title;
-    $('now-meta').textContent = `${playing.song.artist} · sung by ${playing.guest_name}`;
+    $('now-meta').textContent = [playing.song.artist, `sung by ${playing.guest_name}`].filter(Boolean).join(' · ');
   }
 
   $('queue-count').textContent = upNext.length;
@@ -108,7 +108,7 @@ async function refreshQueue() {
           (row) => `
           <li class="${myRequestIds.has(row.id) ? 'mine' : ''}">
             <span class="title">${escapeHtml(row.song.title)}</span>
-            <span class="artist">${escapeHtml(row.song.artist)} · ${escapeHtml(row.guest_name)}</span>
+            <span class="artist">${row.song.artist ? `${escapeHtml(row.song.artist)} · ` : ''}${escapeHtml(row.guest_name)}</span>
           </li>`,
         )
         .join('')
