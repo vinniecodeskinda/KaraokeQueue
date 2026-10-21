@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Karaoke — TV</title>
+    <link rel="preconnect" href="https://www.youtube.com" />
+  </head>
+  <body class="host">
+    <div id="app">
+      <main class="stage">
+        <div class="player-frame"><div id="player"></div></div>
+        <div class="now-playing" id="now-playing" hidden>
+          <span class="label">Now singing</span>
+          <strong id="np-guest"></strong>
+          <span id="np-song"></span>
+        </div>
+        <div class="idle" id="idle">
+          <h1>🎤 Karaoke Night</h1>
+          <p>Scan the code to request a song</p>
+        </div>
+      </main>
+
+      <aside class="sidebar">
+        <section class="join">
+          <canvas id="join-qr" width="160" height="160" aria-label="QR code to join"></canvas>
+          <div>
+            <p class="join-title">Pick a song</p>
+            <p class="join-url" id="join-url"></p>
+          </div>
+        </section>
+
+        <section class="up-next">
+          <h2>Up next <span class="count" id="up-next-count">0</span></h2>
+          <ol id="up-next"></ol>
+        </section>
+
+        <footer class="host-controls">
+          <button id="skip-btn" type="button" title="Skip (N)">Skip ⏭</button>
+          <span class="conn" id="conn" title="Realtime connection">●</span>
+        </footer>
+      </aside>
+
+      <div class="toast" id="toast" role="status" hidden></div>
+
+      <div class="start-overlay" id="start-overlay">
+        <button id="start-btn" type="button">▶ Start the party</button>
+        <p>Browsers require one click before videos can play with sound.</p>
+      </div>
+    </div>
+    <script type="module" src="/src/host/main.js"></script>
+  </body>
+</html>
