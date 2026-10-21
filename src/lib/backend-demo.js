@@ -1,10 +1,10 @@
-// Demo backend: same API as backend-supabase.js, but the catalog and queue
-// live in this browser's localStorage and changes are broadcast to other
-// tabs with BroadcastChannel. Open /host/ and / in two tabs of the same
-// browser and they stay in sync — no Supabase project needed.
+// Demo backend: same API as backend-supabase.js, but rooms, catalog and
+// queue live in this browser's localStorage and changes are broadcast to
+// other tabs with BroadcastChannel. Open the host and join pages in two tabs
+// of the same browser and they stay in sync — no Supabase project needed.
 //
-// Mirrors the rules in supabase/schema.sql (one 'playing' row, per-guest
-// cap, idempotent advance) so the demo behaves like the real thing.
+// Mirrors the rules in supabase/schema.sql (one 'playing' row per room,
+// per-guest cap, host key check, idempotent advance).
 
 const SONGS = [
   { title: 'Never Gonna Give You Up', artist: 'Rick Astley', youtube_video_id: 'dQw4w9WgXcQ', tags: ['pop', '80s'] },
@@ -17,18 +17,21 @@ const SONGS = [
   { title: 'See You Again', artist: 'Wiz Khalifa ft. Charlie Puth', youtube_video_id: 'RgKAFK5djSk', tags: ['hiphop'] },
 ].map((s) => ({ id: `demo-${s.youtube_video_id}`, ...s }));
 
-const KEY = 'karaoke.demo.queue';
+const QUEUE_KEY = 'karaoke.demo.queue';
+const ROOMS_KEY = 'karaoke.demo.rooms';
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('karaoke-demo') : null;
 const localListeners = new Set();
-let memoryQueue = [];   // fallback when localStorage is unavailable
+const memory = {};   // fallback when localStorage is unavailable
 
-function load() {
-  try { return JSON.parse(localStorage.getItem(KEY)) ?? []; } catch { return memoryQueue; }
+function load(key) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? []; } catch { return memory[key] ?? []; }
 }
 
-function save(rows) {
-  memoryQueue = rows;
-  try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch { /* memory only */ }
+function save(key, rows, notify = true) {
+  memory[key] = rows;
+  try { localStorage.setItem(key, JSON.stringify(rows)); } catch { /* memory only */ }
+  if (!notify) return;
   channel?.postMessage('changed');            // other tabs
   localListeners.forEach((fn) => fn());       // this tab
 }
@@ -36,10 +39,28 @@ function save(rows) {
 const withSong = (row) => ({ ...row, song: SONGS.find((s) => s.id === row.song_id) });
 const tick = () => new Promise((r) => setTimeout(r, 60));   // feel like a network call
 
-export async function fetchActiveQueue() {
+export async function createRoom() {
   await tick();
-  const rows = load()
-    .filter((r) => r.status === 'playing' || r.status === 'queued')
+  const rooms = load(ROOMS_KEY);
+  let code;
+  do {
+    code = Array.from({ length: 5 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
+  } while (rooms.some((r) => r.code === code));
+  const room = { id: crypto.randomUUID(), code, hostKey: crypto.randomUUID() };
+  save(ROOMS_KEY, [...rooms, room], false);
+  return room;
+}
+
+export async function findRoom(code) {
+  await tick();
+  const room = load(ROOMS_KEY).find((r) => r.code === code.trim().toUpperCase());
+  return room ? { id: room.id, code: room.code } : null;
+}
+
+export async function fetchActiveQueue(roomId) {
+  await tick();
+  const rows = load(QUEUE_KEY)
+    .filter((r) => r.room_id === roomId && (r.status === 'playing' || r.status === 'queued'))
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
     .map(withSong);
   return {
@@ -58,23 +79,24 @@ export async function searchSongs(term, limit = 25) {
     .slice(0, limit);
 }
 
-export async function requestSong(songId, guestName) {
+export async function requestSong(roomId, songId, guestName) {
   await tick();
   const name = guestName.trim();
-  const rows = load();
+  const rows = load(QUEUE_KEY);
   const mine = rows.filter(
-    (r) => r.status === 'queued' && r.guest_name.toLowerCase() === name.toLowerCase(),
+    (r) => r.room_id === roomId && r.status === 'queued' && r.guest_name.toLowerCase() === name.toLowerCase(),
   );
   if (mine.length >= 5) throw new Error('You already have 5 songs waiting. Let someone else sing!');
   const row = {
     id: crypto.randomUUID(),
+    room_id: roomId,
     song_id: songId,
     guest_name: name,
     status: 'queued',
     created_at: new Date().toISOString(),
     started_at: null,
   };
-  save([...rows, row]);
+  save(QUEUE_KEY, [...rows, row]);
   return row.id;
 }
 
@@ -82,24 +104,27 @@ export async function requestYoutubeSong() {
   throw new Error('YouTube search isn’t available in demo mode.');
 }
 
-export async function advanceQueue(finishedId = null, outcome = 'completed') {
+export async function advanceQueue(roomId, hostKey, finishedId = null, outcome = 'completed') {
   await tick();
-  const rows = load();
+  const room = load(ROOMS_KEY).find((r) => r.id === roomId);
+  if (!room || room.hostKey !== hostKey) throw new Error('Only the host can control this room');
+  const rows = load(QUEUE_KEY);
   const now = new Date().toISOString();
+  const inRoom = rows.filter((r) => r.room_id === roomId);
   if (finishedId) {
-    const done = rows.find((r) => r.id === finishedId && r.status === 'playing');
+    const done = inRoom.find((r) => r.id === finishedId && r.status === 'playing');
     if (done) Object.assign(done, { status: outcome, finished_at: now });
   }
-  const playing = rows.find((r) => r.status === 'playing');
+  const playing = inRoom.find((r) => r.status === 'playing');
   if (playing) return playing.id;
-  const next = rows
+  const next = inRoom
     .filter((r) => r.status === 'queued')
     .sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
   if (next) Object.assign(next, { status: 'playing', started_at: now });
   // Keep only the last 50 finished rows so storage never grows unbounded.
   const finished = rows.filter((r) => r.status === 'completed' || r.status === 'skipped');
   const keep = new Set(finished.slice(-50));
-  save(rows.filter((r) => !finished.includes(r) || keep.has(r)));
+  save(QUEUE_KEY, rows.filter((r) => !finished.includes(r) || keep.has(r)));
   return next?.id ?? null;
 }
 
@@ -107,7 +132,7 @@ export async function searchYoutube() {
   return { available: false, items: [] };
 }
 
-export function subscribeToQueue(onChange, onStatus = () => {}) {
+export function subscribeToQueue(roomId, onChange, onStatus = () => {}) {
   let timer;
   const fire = () => {
     clearTimeout(timer);

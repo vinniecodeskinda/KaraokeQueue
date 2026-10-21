@@ -15,12 +15,16 @@ export async function onRequestGet({ request, env, waitUntil }) {
     return json({ error: 'not_configured', items: [] }, 501);
   }
 
-  const q = (new URL(request.url).searchParams.get('q') ?? '').trim().slice(0, 100);
+  const params = new URL(request.url).searchParams;
+  const q = (params.get('q') ?? '').trim().slice(0, 100);
   if (q.length < 2) return json({ items: [] });
+  // "Prioritize karaoke versions" switch (default on).
+  const karaoke = params.get('karaoke') !== '0';
+  const query = karaoke && !/karaoke/i.test(q) ? `${q} karaoke` : q;
 
   // Normalised cache key so "Queen", "queen " share one cached response.
   const cacheKey = new Request(
-    `https://cache.internal/yt-search?q=${encodeURIComponent(q.toLowerCase())}`,
+    `https://cache.internal/yt-search?q=${encodeURIComponent(query.toLowerCase())}`,
   );
   const cache = caches.default;
   const cached = await cache.match(cacheKey);
@@ -33,7 +37,7 @@ export async function onRequestGet({ request, env, waitUntil }) {
     videoEmbeddable: 'true',   // only videos the IFrame player can actually play
     maxResults: '10',
     safeSearch: 'moderate',
-    q: /karaoke/i.test(q) ? q : `${q} karaoke`,
+    q: query,
     key: env.YOUTUBE_API_KEY,
   });
 

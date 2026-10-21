@@ -11,7 +11,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        guest: resolve(__dirname, 'index.html'),
+        entry: resolve(__dirname, 'index.html'),
+        join: resolve(__dirname, 'join/index.html'),
         host: resolve(__dirname, 'host/index.html'),
       },
     },

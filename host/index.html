@@ -17,18 +17,27 @@
         </div>
         <div class="idle" id="idle">
           <h1>🎤 Karaoke Night</h1>
-          <p>Scan the code to request a song</p>
+          <p>Scan the QR code, or go to <b class="idle-site" id="idle-site"></b></p>
+          <p>and enter room code</p>
+          <div class="idle-code" id="idle-code"></div>
         </div>
       </main>
 
-      <aside class="sidebar">
-        <section class="join">
-          <canvas id="join-qr" width="160" height="160" aria-label="QR code to join"></canvas>
-          <div>
-            <p class="join-title">Pick a song</p>
-            <p class="join-url" id="join-url"></p>
+      <aside class="sidebar" id="sidebar">
+        <header class="room-card">
+          <canvas id="join-qr" width="132" height="132" aria-label="QR code to join this room"></canvas>
+          <div class="room-info">
+            <span class="label">Room code</span>
+            <strong class="room-code" id="room-code"></strong>
+            <button type="button" class="secondary small" id="copy-link">🔗 Copy join link</button>
           </div>
-        </section>
+          <button type="button" class="icon-btn" id="collapse-btn" title="Hide sidebar (Q)" aria-label="Hide sidebar">⟩</button>
+        </header>
+
+        <details class="host-search" id="host-search">
+          <summary>＋ Add a song</summary>
+          <div id="search"></div>
+        </details>
 
         <section class="up-next">
           <h2>Up next <span class="count" id="up-next-count">0</span></h2>
@@ -41,12 +50,19 @@
         </footer>
       </aside>
 
+      <button type="button" class="show-sidebar" id="show-sidebar" title="Show queue (Q)" hidden>
+        <span id="pill-code"></span> · <span id="pill-count">0</span> up next ☰
+      </button>
+
       <div class="toast" id="toast" role="status" hidden></div>
 
       <div class="start-overlay" id="start-overlay">
+        <p class="overlay-code" id="overlay-code"></p>
         <button id="start-btn" type="button">▶ Start the party</button>
         <p>Browsers require one click before videos can play with sound.</p>
       </div>
+
+      <div class="gate" id="gate" hidden></div>
     </div>
     <script type="module" src="/src/host/main.js"></script>
   </body>

@@ -4,143 +4,73 @@ import { showDemoBanner } from '../lib/supabase.js';
 import {
   isDemo,
   fetchActiveQueue,
+  findRoom,
   requestSong,
   requestYoutubeSong,
-  searchSongs,
-  searchYoutube,
   subscribeToQueue,
 } from '../lib/queue-api.js';
+import { roomFromUrl, shareJoinLink } from '../lib/rooms.js';
+import { mountSongSearch } from '../lib/song-search.js';
+import { askName, savedName } from '../lib/name-dialog.js';
+import { store } from '../lib/store.js';
 import { escapeHtml } from '../lib/dom.js';
 
 const $ = (id) => document.getElementById(id);
+const REQUESTS_KEY = 'karaoke.requests';
 
-// Per-phone conveniences. localStorage can throw (private mode), so guard it.
-const store = {
-  get(key, fallback) {
-    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
-  },
-  set(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
-  },
-};
-
-let guestName = store.get('karaoke.name', '');
-let myRequestIds = new Set(store.get('karaoke.requests', []));
-let catalogResults = [];
-let ytResults = [];
+let room;
+let myRequestIds = new Set(store.get(REQUESTS_KEY, []));
 
 if (isDemo) showDemoBanner();
 init();
 
-function init() {
-  renderNameChip();
-  wireTabs();
-
-  let debounce;
-  $('search-input').addEventListener('input', () => {
-    clearTimeout(debounce);
-    debounce = setTimeout(runSearch, 250);   // keep request volume low on the free tier
-  });
-  $('search-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    clearTimeout(debounce);
-    runSearch();
-    $('search-input').blur();
-  });
-
-  $('results').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-song-id]');
-    if (btn) request({ kind: 'catalog', song: catalogResults.find((s) => s.id === btn.dataset.songId) });
-  });
-  $('yt-results').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-video-id]');
-    if (btn) request({ kind: 'youtube', song: ytResults.find((s) => s.videoId === btn.dataset.videoId) });
-  });
-  $('yt-search-btn').addEventListener('click', runYoutubeSearch);
-  $('name-chip').addEventListener('click', async () => {
-    const name = await askName(null);
-    if (name) setName(name);
-  });
-
-  runSearch();
-  refreshQueue();
-  subscribeToQueue(refreshQueue);
-}
-
-// ------------------------------------------------------------- search
-
-async function runSearch() {
-  const term = $('search-input').value;
-  $('yt-results').innerHTML = '';
-  try {
-    catalogResults = await searchSongs(term);
-  } catch (err) {
-    toast(err.message);
+async function init() {
+  const code = roomFromUrl();
+  if (!code) {
+    location.replace('/');
     return;
   }
-  $('results').innerHTML = catalogResults.length
-    ? catalogResults.map((s) => resultRow(s.title, s.artist, `data-song-id="${s.id}"`)).join('')
-    : `<li class="empty">No songs match “${escapeHtml(term)}” in the catalog.</li>`;
-
-  // Offer the YouTube fallback when the user has typed something.
-  $('yt-fallback').hidden = term.trim().length < 2;
-}
-
-async function runYoutubeSearch() {
-  const term = $('search-input').value.trim();
-  if (!term) return;
-  const btn = $('yt-search-btn');
-  btn.disabled = true;
-  btn.textContent = 'Searching YouTube…';
   try {
-    const { available, items } = await searchYoutube(term);
-    if (!available) {
-      $('yt-results').innerHTML = '<li class="empty">YouTube search isn’t set up on this party.</li>';
-      return;
-    }
-    ytResults = items;
-    $('yt-results').innerHTML = items.length
-      ? items
-          .map((v) =>
-            resultRow(v.title, v.channel, `data-video-id="${escapeHtml(v.videoId)}"`, v.thumbnail),
-          )
-          .join('')
-      : '<li class="empty">Nothing found on YouTube either.</li>';
+    room = await findRoom(code);
   } catch (err) {
-    toast(err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Search YouTube instead';
+    return gate(`Couldn't reach the server: ${escapeHtml(err.message)}`);
   }
-}
+  if (!room) {
+    return gate(`There's no room called <b>${escapeHtml(code)}</b>. Check the code on the TV.`);
+  }
 
-function resultRow(title, artist, dataAttr, thumb) {
-  return `
-    <li class="result">
-      ${thumb ? `<img src="${escapeHtml(thumb)}" alt="" loading="lazy" />` : ''}
-      <div class="info">
-        <span class="title">${escapeHtml(title)}</span>
-        <span class="artist">${escapeHtml(artist)}</span>
-      </div>
-      <button type="button" ${dataAttr}>Request</button>
-    </li>`;
+  $('room-code').textContent = room.code;
+  document.title = `Karaoke — Room ${room.code}`;
+  $('room-chip').addEventListener('click', async () => {
+    const how = await shareJoinLink(room.code);
+    if (how === 'copied') toast('Join link copied — send it to your friends!');
+  });
+
+  renderNameChip();
+  $('name-chip').addEventListener('click', async () => {
+    if (await askName(null)) renderNameChip();
+  });
+  wireTabs();
+
+  mountSongSearch($('search'), { onRequest: request, onError: toast });
+
+  refreshQueue();
+  subscribeToQueue(room.id, refreshQueue);
 }
 
 // ------------------------------------------------------------- request
 
 async function request({ kind, song }) {
-  if (!song) return;
   const name = await askName(song.title);
   if (!name) return;
-  setName(name);
-
+  renderNameChip();
   try {
     const id =
       kind === 'catalog'
-        ? await requestSong(song.id, name)
-        : await requestYoutubeSong(song, name);
+        ? await requestSong(room.id, song.id, name)
+        : await requestYoutubeSong(room.id, song, name);
     myRequestIds.add(id);
-    store.set('karaoke.requests', [...myRequestIds]);
+    store.set(REQUESTS_KEY, [...myRequestIds]);
     toast(`🎶 “${song.title}” added to the queue!`);
     refreshQueue();
   } catch (err) {
@@ -148,36 +78,10 @@ async function request({ kind, song }) {
   }
 }
 
-/** Show the name dialog, pre-filled with the remembered name. Resolves to a name or null. */
-function askName(songTitle) {
-  const dialog = $('name-dialog');
-  $('name-dialog-song').textContent = songTitle ? `Requesting “${songTitle}”` : 'Change your name';
-  $('name-submit').textContent = songTitle ? 'Request 🎶' : 'Save';
-  $('name-input').value = guestName;
-  dialog.returnValue = '';   // Esc keeps the previous returnValue otherwise
-  dialog.showModal();
-  $('name-input').focus();
-  return new Promise((resolve) => {
-    dialog.addEventListener(
-      'close',
-      () => {
-        const name = $('name-input').value.trim();
-        resolve(dialog.returnValue === 'ok' && name ? name : null);
-      },
-      { once: true },
-    );
-  });
-}
-
-function setName(name) {
-  guestName = name;
-  store.set('karaoke.name', name);
-  renderNameChip();
-}
-
 function renderNameChip() {
-  $('name-chip').hidden = !guestName;
-  $('name-chip').textContent = `👤 ${guestName}`;
+  const name = savedName();
+  $('name-chip').hidden = !name;
+  $('name-chip').textContent = `👤 ${name}`;
 }
 
 // ------------------------------------------------------------- queue
@@ -185,7 +89,7 @@ function renderNameChip() {
 async function refreshQueue() {
   let playing, upNext;
   try {
-    ({ playing, upNext } = await fetchActiveQueue());
+    ({ playing, upNext } = await fetchActiveQueue(room.id));
   } catch (err) {
     toast(err.message);
     return;
@@ -241,7 +145,7 @@ function pruneOldRequests(playing, upNext) {
   const kept = [...myRequestIds].filter((id) => active.has(id));
   if (kept.length !== myRequestIds.size) {
     myRequestIds = new Set(kept);
-    store.set('karaoke.requests', kept);
+    store.set(REQUESTS_KEY, kept);
   }
 }
 
@@ -258,6 +162,15 @@ function wireTabs() {
       });
     }),
   );
+}
+
+function gate(html) {
+  $('gate').hidden = false;
+  $('gate').innerHTML = `
+    <div class="gate-card">
+      <p>${html}</p>
+      <a class="btn" href="/">Enter a different code</a>
+    </div>`;
 }
 
 let toastTimer;

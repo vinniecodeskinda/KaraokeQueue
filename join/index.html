@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f0b1e" />
+    <title>Karaoke — Join</title>
+  </head>
+  <body class="guest">
+    <div id="app">
+      <header class="guest-header">
+        <a class="home-link" href="/" aria-label="Back to start">🎤</a>
+        <button type="button" class="room-chip" id="room-chip" title="Share join link">
+          Room <b id="room-code"></b> <span aria-hidden="true">🔗</span>
+        </button>
+        <button id="name-chip" class="secondary chip" type="button" hidden></button>
+      </header>
+
+      <section class="now-card" id="now-card" hidden>
+        <span class="label">Now singing</span>
+        <strong id="now-title"></strong>
+        <span id="now-meta"></span>
+      </section>
+
+      <section class="my-status" id="my-status" hidden></section>
+
+      <nav class="tabs" role="tablist">
+        <button role="tab" class="tab" data-tab="search" aria-selected="true">Search</button>
+        <button role="tab" class="tab" data-tab="queue" aria-selected="false">
+          Queue <span class="badge" id="queue-count">0</span>
+        </button>
+      </nav>
+
+      <section class="panel" data-panel="search">
+        <div id="search"></div>
+      </section>
+
+      <section class="panel" data-panel="queue" hidden>
+        <ol class="queue-list" id="queue-list"></ol>
+      </section>
+
+      <div class="toast" id="toast" role="status" hidden></div>
+      <div class="gate" id="gate" hidden></div>
+    </div>
+
+    <script type="module" src="/src/guest/main.js"></script>
+  </body>
+</html>

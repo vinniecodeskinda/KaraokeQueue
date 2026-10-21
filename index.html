@@ -4,63 +4,37 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0f0b1e" />
-    <title>Karaoke — Request a Song</title>
+    <title>Karaoke Queue</title>
   </head>
-  <body class="guest">
-    <div id="app">
-      <header class="guest-header">
-        <h1>🎤 Karaoke</h1>
-        <button id="name-chip" class="secondary chip" type="button" hidden></button>
+  <body class="entry">
+    <main id="app" class="entry-main">
+      <header class="entry-hero">
+        <div class="mic">🎤</div>
+        <h1>Karaoke Queue</h1>
+        <p>Play on the TV. Pick songs from your phone. No sign-up.</p>
       </header>
 
-      <section class="now-card" id="now-card" hidden>
-        <span class="label">Now singing</span>
-        <strong id="now-title"></strong>
-        <span id="now-meta"></span>
-      </section>
-
-      <section class="my-status" id="my-status" hidden></section>
-
-      <nav class="tabs" role="tablist">
-        <button role="tab" class="tab" data-tab="search" aria-selected="true">Search</button>
-        <button role="tab" class="tab" data-tab="queue" aria-selected="false">
-          Queue <span class="badge" id="queue-count">0</span>
-        </button>
-      </nav>
-
-      <section class="panel" data-panel="search">
-        <form class="search" id="search-form" role="search">
-          <input id="search-input" type="search" placeholder="Song title or artist…"
-                 autocomplete="off" enterkeyhint="search" aria-label="Search songs" />
+      <section class="entry-card" aria-labelledby="join-title">
+        <h2 id="join-title">Join a party</h2>
+        <form id="join-form" class="code-form" autocomplete="off">
+          <input id="code-input" name="code" inputmode="text" autocapitalize="characters"
+                 spellcheck="false" maxlength="5" placeholder="ROOM CODE" aria-label="Room code" />
+          <button type="submit" id="join-btn">Join</button>
         </form>
-        <ul class="results" id="results"></ul>
-        <div class="yt-fallback" id="yt-fallback" hidden>
-          <button id="yt-search-btn" class="secondary" type="button">Search YouTube instead</button>
-          <ul class="results" id="yt-results"></ul>
-        </div>
+        <p class="hint">Got a link or QR code? Just open it — you'll land straight in the room.</p>
       </section>
 
-      <section class="panel" data-panel="queue" hidden>
-        <ol class="queue-list" id="queue-list"></ol>
+      <div class="or"><span>or</span></div>
+
+      <section class="entry-card" aria-labelledby="host-title">
+        <h2 id="host-title">Host a party</h2>
+        <p class="hint">Open this on the TV or laptop that will play the videos.</p>
+        <button type="button" id="host-btn" class="wide">Create a room</button>
+        <div id="recent-rooms" class="recent" hidden></div>
       </section>
 
       <div class="toast" id="toast" role="status" hidden></div>
-    </div>
-
-    <dialog id="name-dialog">
-      <form method="dialog" id="name-form">
-        <h2>Who's singing?</h2>
-        <p id="name-dialog-song"></p>
-        <input id="name-input" name="name" maxlength="40" required autocomplete="nickname"
-               placeholder="Your name" />
-        <div class="dialog-actions">
-          <!-- Submit first so Enter in the input picks it; CSS reverses the visual order. -->
-          <button value="ok" id="name-submit">Request 🎶</button>
-          <button value="cancel" class="secondary" formnovalidate>Cancel</button>
-        </div>
-      </form>
-    </dialog>
-
-    <script type="module" src="/src/guest/main.js"></script>
+    </main>
+    <script type="module" src="/src/entry/main.js"></script>
   </body>
 </html>

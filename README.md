@@ -2,10 +2,13 @@
 
 Split-screen karaoke for a house party:
 
-| URL      | Who        | What                                                                 |
-|----------|------------|----------------------------------------------------------------------|
-| `/host/` | The TV     | YouTube player + "Up next" sidebar + QR code; advances the queue automatically |
-| `/`      | Guests' phones | Search the catalog, request songs, see how many songs are ahead of you |
+| URL                   | Who            | What                                                                 |
+|-----------------------|----------------|----------------------------------------------------------------------|
+| `/`                   | Everyone       | Landing page: **Host a party** (creates a room) or **Join** by typing a 5-character room code |
+| `/host/?room=CODE`    | The TV         | YouTube player, room code + QR + "Copy join link", song search, collapsible "Up next" sidebar (button or **Q**), auto-advancing queue |
+| `/join/?room=CODE`    | Guests' phones | The join link / QR target. Search, request songs, see how many songs are ahead of you |
+
+No sign-in anywhere. Creating a room gives the host's device a secret host key, kept in its browser, so only that device can play or skip songs. Guests only need the code or link. Both screens have a **Prioritize karaoke versions** switch: it ranks karaoke/lyric versions first and adds "karaoke" to YouTube searches.
 
 Built to run entirely on free tiers: **Cloudflare Pages** (static site + one Pages Function) and **Supabase** (Postgres + Realtime). There's no server to keep running.
 
@@ -32,7 +35,7 @@ Built to run entirely on free tiers: **Cloudflare Pages** (static site + one Pag
 npm install
 npm run dev
 ```
-Without Supabase keys, the app uses an in-browser demo backend ([`src/lib/backend-demo.js`](src/lib/backend-demo.js)). Open `/host/` and `/` in two tabs of the **same browser**. They stay in sync through `BroadcastChannel`. A yellow banner shows you're in demo mode. Phones on other devices won't sync in demo mode, because that needs Supabase.
+Without Supabase keys, the app uses an in-browser demo backend ([`src/lib/backend-demo.js`](src/lib/backend-demo.js)). Create a room in one tab and join it from another tab of the **same browser**. They stay in sync through `BroadcastChannel`. A yellow banner shows you're in demo mode. Phones on other devices won't sync in demo mode, because that needs Supabase.
 
 ### 1. Supabase (free tier)
 1. Create a project at [supabase.com](https://supabase.com).
@@ -45,7 +48,7 @@ npm install
 cp .env.example .env    # fill in SUPABASE_URL and SUPABASE_ANON_KEY
 npm run dev
 ```
-Open `http://localhost:5173/host/` on one screen and `http://localhost:5173/` on your phone. Your phone must be on the same Wi-Fi; run `npm run dev -- --host` to expose the dev server to your LAN.
+Open `http://localhost:5173/` and click **Create a room**. Then join from your phone with the room code, or scan the QR code. The phone must be on the same Wi-Fi; run `npm run dev -- --host` to expose the dev server to your LAN.
 
 The YouTube fallback is a Pages Function, so plain `npm run dev` doesn't serve it. The guest UI just reports it as not set up. To test it locally, put `YOUTUBE_API_KEY=...` in `.dev.vars` and run `npx wrangler pages dev dist` after `npm run build`, or `npm run pages:dev`.
 
@@ -79,14 +82,21 @@ values ('Song', 'Artist', 'XXXXXXXXXXX', '{pop,english}');
 The video ID is the 11 characters after `v=` in a YouTube URL. Karaoke or lyric versions work best. Check that they play when embedded.
 
 ## Security notes
-This is a trust-your-guests app with no logins. Anyone with the URL can request songs, and anyone could call `advance_queue()` to skip the current song. If that matters, put the site behind **Cloudflare Access** (free for up to 50 users) or add a host PIN check inside `advance_queue()`.
+This is a trust-your-guests app with no logins. Anyone with a room's code can request songs into that room. Only the device holding the room's host key can advance or skip; `advance_queue()` checks it. Guests can't read the `rooms` table, so host keys never leave the server. Rooms idle for 2+ days are removed by `purge_old_queue()`.
 
 ## Project layout
 ```
-index.html                    guest remote (/)
-host/index.html               TV screen (/host/)
+index.html                    landing page: host or join (/)
+join/index.html               guest remote (/join/?room=CODE)
+host/index.html               TV screen (/host/?room=CODE)
+src/entry/main.js             create room / enter code
 src/lib/supabase.js           client + env config
-src/lib/queue-api.js          all DB calls + Realtime subscription
+src/lib/queue-api.js          picks Supabase or demo backend
+src/lib/backend-supabase.js   all DB calls + Realtime subscription
+src/lib/backend-demo.js       in-browser demo backend
+src/lib/rooms.js              room codes, join links, host keys on this device
+src/lib/song-search.js        shared search widget + karaoke switch
+src/lib/name-dialog.js        "Who's singing?" prompt
 src/host/youtube-player.js    IFrame API loader/wrapper
 src/host/queue-controller.js  queue ⇄ player state machine
 src/host/main.js              TV UI

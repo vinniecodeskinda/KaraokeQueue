@@ -16,11 +16,15 @@ export class QueueController {
   /**
    * @param {object}   opts
    * @param {YT.Player} opts.player  ready YouTube player
+   * @param {string}   opts.roomId
+   * @param {string}   opts.hostKey  secret proving this device hosts the room
    * @param {(state) => void} opts.onChange  called with { playing, upNext } after every sync
    * @param {(msg: string) => void} [opts.onNotice]  transient messages for the TV
    */
-  constructor({ player, onChange, onNotice = () => {} }) {
+  constructor({ player, roomId, hostKey, onChange, onNotice = () => {} }) {
     this.player = player;
+    this.roomId = roomId;
+    this.hostKey = hostKey;
     this.onChange = onChange;
     this.onNotice = onNotice;
     this.state = { playing: null, upNext: [] };
@@ -68,18 +72,18 @@ export class QueueController {
   async #advance(finishedId, outcome) {
     // Ignore stale events: another host tab may already have moved on.
     if (this.state.playing && this.state.playing.id !== finishedId) return this.#sync();
-    await advanceQueue(finishedId, outcome);
+    await advanceQueue(this.roomId, this.hostKey, finishedId, outcome);
     return this.#sync();   // loads the next video, or stops the player if the queue is empty
   }
 
   async #sync() {
-    let { playing, upNext } = await fetchActiveQueue();
+    let { playing, upNext } = await fetchActiveQueue(this.roomId);
 
     // Nothing playing but songs are waiting → promote the first one.
     // (Covers first start, songs added to an idle queue, and host reloads.)
     if (!playing && upNext.length > 0) {
-      await advanceQueue(null);
-      ({ playing, upNext } = await fetchActiveQueue());
+      await advanceQueue(this.roomId, this.hostKey, null);
+      ({ playing, upNext } = await fetchActiveQueue(this.roomId));
     }
 
     this.state = { playing, upNext };

@@ -1,4 +1,4 @@
-/* Mobile-first guest remote. */
+/* Mobile-first guest remote. Shared search/dialog styles live in base.css. */
 body.guest { min-height: 100vh; }
 
 .guest #app {
@@ -10,12 +10,27 @@ body.guest { min-height: 100vh; }
 .guest-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   padding: 4px 0 12px;
 }
-.guest-header h1 { font-size: 1.4rem; margin: 0; }
-.chip { padding: 0.35em 0.9em; font-size: 0.9rem; max-width: 55vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-link { font-size: 1.5rem; text-decoration: none; }
+.room-chip {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 500;
+  padding: 0.35em 0.9em;
+  font-size: 0.9rem;
+}
+.room-chip b { color: var(--text); letter-spacing: 0.12em; }
+.chip {
+  margin-left: auto;
+  padding: 0.35em 0.9em;
+  font-size: 0.9rem;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .now-card {
   display: flex;
@@ -63,43 +78,7 @@ body.guest { min-height: 100vh; }
   font-size: 0.8em;
 }
 
-.search input {
-  width: 100%;
-  font: inherit;
-  font-size: 16px;            /* ≥16px stops iOS zooming on focus */
-  padding: 0.8em 1em;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  outline: none;
-}
-.search input:focus { border-color: var(--accent-2); }
-
-.results, .queue-list { list-style: none; margin: 10px 0 0; padding: 0; }
-
-.result {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-  border-radius: 12px;
-  background: var(--surface);
-}
-.result img { width: 64px; height: 36px; object-fit: cover; border-radius: 6px; flex: none; }
-.result .info { flex: 1; min-width: 0; }
-.result .title, .queue-list .title { display: block; font-weight: 600; overflow-wrap: anywhere; }
-.result .artist, .queue-list .artist { display: block; color: var(--muted); font-size: 0.88rem; }
-.result button { flex: none; padding: 0.5em 1em; font-size: 0.9rem; }
-
-.empty { color: var(--muted); padding: 12px 4px; background: none !important; }
-
-.yt-fallback { margin-top: 14px; text-align: center; }
-.yt-fallback[hidden] { display: none; }
-.yt-fallback .results { text-align: left; }
-
-.queue-list { counter-reset: q; }
+.queue-list { list-style: none; margin: 10px 0 0; padding: 0; counter-reset: q; }
 .queue-list li {
   counter-increment: q;
   position: relative;
@@ -116,29 +95,8 @@ body.guest { min-height: 100vh; }
   font-weight: 700;
   color: var(--accent);
 }
+.queue-list .title { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.queue-list .artist { display: block; color: var(--muted); font-size: 0.88rem; }
 .queue-list li.mine { outline: 2px solid var(--accent-2); }
 .queue-list li.empty { padding-left: 4px; }
 .queue-list li.empty::before { content: none; }
-
-dialog {
-  width: min(92vw, 400px);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface);
-  color: var(--text);
-  padding: 20px;
-}
-dialog::backdrop { background: rgb(0 0 0 / 0.6); }
-dialog h2 { margin: 0 0 4px; }
-dialog p { margin: 0 0 14px; color: var(--muted); }
-dialog input {
-  width: 100%;
-  font: inherit;
-  font-size: 16px;
-  padding: 0.75em 1em;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-}
-.dialog-actions { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: 8px; margin-top: 16px; }

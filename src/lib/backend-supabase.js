@@ -8,11 +8,27 @@ const QUEUE_SELECT = `
   song:songs ( id, title, artist, youtube_video_id )
 `;
 
-/** Active queue: the playing row (if any) first, then queued rows in order. */
-export async function fetchActiveQueue() {
+/** Create a room. Returns { id, code, hostKey } — keep hostKey on this device. */
+export async function createRoom() {
+  const { data, error } = await supabase.rpc('create_room');
+  if (error) throw friendly(error);
+  const row = data[0];
+  return { id: row.id, code: row.code, hostKey: row.host_key };
+}
+
+/** Look up a room by its code. Returns { id, code } or null. */
+export async function findRoom(code) {
+  const { data, error } = await supabase.rpc('get_room', { p_code: code });
+  if (error) throw friendly(error);
+  return data[0] ?? null;
+}
+
+/** Active queue for a room: the playing row (if any) and queued rows in order. */
+export async function fetchActiveQueue(roomId) {
   const { data, error } = await supabase
     .from('queue')
     .select(QUEUE_SELECT)
+    .eq('room_id', roomId)
     .in('status', ['playing', 'queued'])
     .order('created_at', { ascending: true })
     .limit(200);
@@ -22,7 +38,7 @@ export async function fetchActiveQueue() {
   return { playing, upNext };
 }
 
-/** Search the catalog by title or artist. */
+/** Search the shared catalog by title or artist. */
 export async function searchSongs(term, limit = 25) {
   const q = term.trim();
   let query = supabase
@@ -41,20 +57,21 @@ export async function searchSongs(term, limit = 25) {
   return data;
 }
 
-/** Guest requests a catalog song. Returns the new queue row id. */
-export async function requestSong(songId, guestName) {
+/** Request a catalog song into a room. Returns the new queue row id. */
+export async function requestSong(roomId, songId, guestName) {
   const { data, error } = await supabase
     .from('queue')
-    .insert({ song_id: songId, guest_name: guestName })
+    .insert({ room_id: roomId, song_id: songId, guest_name: guestName })
     .select('id')
     .single();
   if (error) throw friendly(error);
   return data.id;
 }
 
-/** Guest requests a YouTube search result that isn't in the catalog yet. */
-export async function requestYoutubeSong({ videoId, title, artist }, guestName) {
+/** Request a YouTube search result that isn't in the catalog yet. */
+export async function requestYoutubeSong(roomId, { videoId, title, artist }, guestName) {
   const { data, error } = await supabase.rpc('request_youtube_song', {
+    p_room_id: roomId,
     p_video_id: videoId,
     p_title: title,
     p_artist: artist ?? '',
@@ -68,39 +85,53 @@ export async function requestYoutubeSong({ videoId, title, artist }, guestName) 
  * Host only: mark `finishedId` done (if given) and promote the next song.
  * Returns the id of the row now playing, or null when the queue is empty.
  */
-export async function advanceQueue(finishedId = null, outcome = 'completed') {
+export async function advanceQueue(roomId, hostKey, finishedId = null, outcome = 'completed') {
   const { data, error } = await supabase.rpc('advance_queue', {
+    p_room_id: roomId,
+    p_host_key: hostKey,
     p_finished_id: finishedId,
     p_outcome: outcome,
   });
-  if (error) throw error;
+  if (error) throw friendly(error);
   return data;
 }
 
 /** YouTube Data API fallback via our Pages Function (key stays server-side). */
-export async function searchYoutube(term) {
-  const res = await fetch(`/api/youtube-search?q=${encodeURIComponent(term)}`);
-  if (res.status === 501 || res.status === 404) return { available: false, items: [] };
-  if (!res.ok) throw new Error('YouTube search failed');
+export async function searchYoutube(term, { karaoke = true } = {}) {
+  const params = new URLSearchParams({ q: term, karaoke: karaoke ? '1' : '0' });
+  let res;
+  try {
+    res = await fetch(`/api/youtube-search?${params}`);
+  } catch {
+    return { available: false, items: [] };
+  }
+  // In plain `vite dev` there is no Functions runtime: treat as not set up.
+  const isJson = res.headers.get('content-type')?.includes('application/json');
+  if (!isJson || res.status === 501 || res.status === 404) return { available: false, items: [] };
+  if (!res.ok) throw new Error('YouTube search is unavailable right now');
   const body = await res.json();
   return { available: true, items: body.items ?? [] };
 }
 
 /**
- * Subscribe to every change on the queue table. Calls `onChange()` (debounced)
- * so callers simply re-fetch — the queue is tiny, and this avoids subtle bugs
- * from patching local state with partial Realtime payloads.
+ * Subscribe to one room's queue. Calls `onChange()` (debounced) so callers
+ * simply re-fetch — the queue is tiny, and this avoids subtle bugs from
+ * patching local state with partial Realtime payloads.
  * Returns an unsubscribe function.
  */
-export function subscribeToQueue(onChange, onStatus = () => {}) {
+export function subscribeToQueue(roomId, onChange, onStatus = () => {}) {
   let timer;
   const fire = () => {
     clearTimeout(timer);
     timer = setTimeout(onChange, 120);
   };
   const channel = supabase
-    .channel('queue-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'queue' }, fire)
+    .channel(`queue-${roomId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'queue', filter: `room_id=eq.${roomId}` },
+      fire,
+    )
     .subscribe((status) => {
       onStatus(status);
       // After a dropped connection comes back, resync anything we missed.
@@ -110,6 +141,6 @@ export function subscribeToQueue(onChange, onStatus = () => {}) {
 }
 
 function friendly(error) {
-  // Surface our trigger's human-readable messages (queue full, per-guest cap).
+  // Surface our triggers' human-readable messages (queue full, per-guest cap).
   return new Error(error.message || 'Something went wrong');
 }
