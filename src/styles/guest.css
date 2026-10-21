@@ -94,6 +94,37 @@ body.guest { min-height: 100vh; }
   background: var(--bg);
 }
 .tab { background: var(--surface); color: var(--muted); border-radius: 10px; padding: 0.6em 0.3em; font-size: 0.88rem; }
+/* Reaction bar pinned to the bottom of the phone screen */
+.react-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: min(100%, 560px);
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  background: rgb(15 11 30 / 0.92);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+}
+.react-bar[hidden] { display: none; }
+.react-btn {
+  padding: 0.35em 0;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+.react-btn.pop { animation: pop 0.35s ease-out; }
+@keyframes pop {
+  40% { transform: scale(1.35); background: var(--surface-2); }
+  100% { transform: scale(1); }
+}
+.guest .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
+
 .remote-hint { color: var(--muted); font-size: 0.9rem; margin: 6px 2px 12px; }
 .tab[aria-selected='true'] { background: var(--surface-2); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 .badge {

@@ -43,6 +43,9 @@ export async function createPlayer(elementId, { onEnded, onError, onPlaying, onC
         rel: 0,              // related videos only from the same channel
         playsinline: 1,
         iv_load_policy: 3,   // hide annotations
+        // YouTube's own fullscreen stays available. Browsers show only the
+        // player in that mode, so reactions and the up-next screen can't
+        // appear over it. The page's ⛶ button is the fullscreen that keeps them.
         fs: 1,
       },
       events: {

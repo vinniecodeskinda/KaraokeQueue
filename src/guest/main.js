@@ -26,6 +26,7 @@ import {
 } from '../lib/rooms.js';
 import { startHeartbeat, watchForHostHandover } from '../lib/host-session.js';
 import { mountRemote } from '../lib/remote.js';
+import { REACTIONS } from '../lib/reactions.js';
 import { mountSongSearch } from '../lib/song-search.js';
 import { currentName, hasName, promptJoin, promptName, saveName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
@@ -106,6 +107,7 @@ async function init() {
   });
   showRemoteState({ active: false });
   document.querySelector('.tab[data-tab=remote]').addEventListener('click', requestState);
+  mountReactionBar();
 
   live = subscribeToRoom(
     room.id,
@@ -238,9 +240,34 @@ function requestState() {
 function showRemoteState(state) {
   if (state?.active) clearTimeout(stateTimeout);
   updateRemote(state);
-  $('remote-hint').textContent = state?.active
-    ? 'Controls the TV for everyone.'
-    : 'Nothing is playing on the TV right now (or the TV player hasn’t been started).';
+  $('remote-hint').textContent = !state?.active
+    ? 'Nothing is playing on the TV right now (or the TV player hasn’t been started).'
+    : state.upNext
+      ? 'The TV is showing who’s up next — press Play to start the song now.'
+      : 'Controls the TV for everyone.';
+}
+
+// ------------------------------------------------------------- reactions
+
+/** Emoji bar pinned to the bottom of the screen; taps float up on the TV. */
+function mountReactionBar() {
+  const bar = $('react-bar');
+  bar.innerHTML = REACTIONS.map(
+    (e) => `<button type="button" class="react-btn" data-emoji="${e}" aria-label="Send ${e}">${e}</button>`,
+  ).join('');
+  bar.hidden = false;
+  let last = 0;
+  bar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.react-btn');
+    if (!btn) return;
+    const now = Date.now();
+    if (now - last < 300) return;   // gentle rate limit per phone
+    last = now;
+    live.send('react', { emoji: btn.dataset.emoji, name: me.name });
+    btn.classList.remove('pop');
+    void btn.offsetWidth;            // restart the pop animation
+    btn.classList.add('pop');
+  });
 }
 
 async function onKickClick(e) {

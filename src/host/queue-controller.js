@@ -20,13 +20,17 @@ export class QueueController {
    * @param {string}   opts.hostKey  secret proving this device hosts the room
    * @param {(state) => void} opts.onChange  called with { playing, upNext } after every sync
    * @param {(msg: string) => void} [opts.onNotice]  transient messages for the TV
+   * @param {(row, upNext) => void} [opts.onNewSong]  if given, new songs are only
+   *   *cued* (loaded, not played) and this is called — the host shows the
+   *   up-next screen and calls player.playVideo() when ready
    */
-  constructor({ player, roomId, hostKey, onChange, onNotice = () => {} }) {
+  constructor({ player, roomId, hostKey, onChange, onNotice = () => {}, onNewSong = null }) {
     this.player = player;
     this.roomId = roomId;
     this.hostKey = hostKey;
     this.onChange = onChange;
     this.onNotice = onNotice;
+    this.onNewSong = onNewSong;
     this.state = { playing: null, upNext: [] };
     this.loadedRowId = null;   // queue row whose video is loaded in the player
     this.chain = Promise.resolve();
@@ -90,7 +94,12 @@ export class QueueController {
 
     if (playing && playing.id !== this.loadedRowId) {
       this.loadedRowId = playing.id;
-      this.player.loadVideoById(playing.song.youtube_video_id);
+      if (this.onNewSong) {
+        this.player.cueVideoById(playing.song.youtube_video_id);
+        this.onNewSong(playing, upNext);
+      } else {
+        this.player.loadVideoById(playing.song.youtube_video_id);
+      }
     } else if (!playing && this.loadedRowId) {
       this.loadedRowId = null;
       this.player.stopVideo();

@@ -23,6 +23,7 @@ import {
 } from '../lib/rooms.js';
 import { startHeartbeat } from '../lib/host-session.js';
 import { mountRemote, SPEEDS } from '../lib/remote.js';
+import { isReaction } from '../lib/reactions.js';
 import { mountSongSearch } from '../lib/song-search.js';
 import { currentName, promptName, saveName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
@@ -43,6 +44,9 @@ let stopHeartbeat = () => {};
 let updateRemote = () => {};
 let loadedRowId = null;      // queue row currently on screen
 let resetSpeed = false;      // new song → back to normal speed once it starts
+let intermission = null;     // { timer } while the up-next screen is showing
+const INTERMISSION_SECONDS = 8;
+const MAX_FLOATING = 40;     // cap on-screen reactions so a spam-tapper can't flood the TV
 
 if (isDemo) showDemoBanner();
 init();
@@ -137,6 +141,7 @@ async function init() {
       onBroadcast: (event, payload) => {
         if (event === 'control') applyAction(payload?.action);
         else if (event === 'hello') sendState();
+        else if (event === 'react') floatReaction(payload);
       },
     },
     (status) => ($('conn').dataset.status = status),
@@ -147,6 +152,8 @@ async function init() {
   );
 
   $('start-btn').addEventListener('click', start, { once: true });
+  $('im-start').addEventListener('click', startNow);
+  $('fs-btn').addEventListener('click', toggleFullscreen);
 }
 
 async function start() {
@@ -171,6 +178,7 @@ async function start() {
     hostKey: hosting.hostKey,
     onChange: render,
     onNotice: toast,
+    onNewSong: showIntermission,
   });
 
   // Controls are button-only: single-letter hotkeys on the TV are too easy to hit by accident.
@@ -181,9 +189,88 @@ async function start() {
 
 // ------------------------------------------------------------- remote
 
+// ------------------------------------------------------------- up next
+
+/** A new song is cued: show who's up, count down, then play. */
+function showIntermission(row, upNext) {
+  hideIntermission();
+  $('im-singer').textContent = `🎤 ${row.guest_name}`;
+  $('im-song').textContent = [row.song.title, row.song.artist].filter(Boolean).join(' — ');
+  const then = upNext[0];
+  $('im-then').textContent = then ? `Then: ${then.guest_name} — ${then.song.title}` : '';
+  $('intermission').hidden = false;
+
+  let left = INTERMISSION_SECONDS;
+  $('im-count').textContent = left;
+  intermission = {
+    timer: setInterval(() => {
+      left -= 1;
+      $('im-count').textContent = left;
+      if (left <= 0) startNow();
+    }, 1000),
+  };
+  setTimeout(sendState, 300);
+}
+
+function hideIntermission() {
+  if (intermission) clearInterval(intermission.timer);
+  intermission = null;
+  $('intermission').hidden = true;
+}
+
+/** End the countdown early (Start now / Play on any remote) or on time. */
+function startNow() {
+  if (!intermission) return;
+  hideIntermission();
+  player.playVideo();
+}
+
+// ------------------------------------------------------------- reactions
+
+/** Float an emoji (with the sender's name) up across the TV. */
+function floatReaction(payload) {
+  const layer = $('reactions');
+  if (!isReaction(payload?.emoji) || layer.childElementCount >= MAX_FLOATING) return;
+  const el = document.createElement('div');
+  el.className = 'reaction';
+  el.style.left = `${5 + Math.random() * 85}%`;
+  el.style.setProperty('--drift', `${Math.round((Math.random() - 0.5) * 120)}px`);
+  el.style.setProperty('--dur', `${3.2 + Math.random() * 1.6}s`);
+  const emoji = document.createElement('span');
+  emoji.className = 'reaction-emoji';
+  emoji.textContent = payload.emoji;
+  const who = document.createElement('span');
+  who.className = 'reaction-name';
+  who.textContent = String(payload.name ?? '').slice(0, 40);
+  el.append(emoji, who);
+  el.addEventListener('animationend', () => el.remove());
+  layer.append(el);
+}
+
+/**
+ * Fullscreen the whole TV page with the video filling it (sidebar hidden).
+ * Looks like YouTube's fullscreen, but our overlays (reactions, up-next)
+ * still show, which they can't inside YouTube's own fullscreen.
+ */
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.().catch(() => toast('Fullscreen isn’t available here.'));
+}
+document.addEventListener('fullscreenchange', () => {
+  const on = document.fullscreenElement === document.documentElement;
+  $('app').classList.toggle('fs-mode', on);
+  $('fs-btn').textContent = on ? '✕ Exit fullscreen' : '⛶ Fullscreen + reactions';
+});
+
 /** Apply a remote action (from the TV's own buttons or any phone). */
 function applyAction(action) {
   if (!player || !controller?.state.playing) return;
+  // On the up-next screen, Play / Start over start the song now; Skip skips it.
+  if (intermission && (action === 'toggle' || action === 'restart')) {
+    startNow();
+    return;
+  }
+  if (intermission && action === 'skip') hideIntermission();
   switch (action) {
     case 'restart':
       player.seekTo(0, true);
@@ -227,6 +314,7 @@ function playerState() {
   if (!player || !controller?.state.playing) return { active: false };
   return {
     active: true,
+    upNext: Boolean(intermission),
     playing: isPlaying(),
     rate: player.getPlaybackRate(),
     volume: Math.round(player.getVolume()),
@@ -243,6 +331,7 @@ function sendState() {
 
 /** Host passed to someone else (this screen was offline too long). */
 function lostHost() {
+  hideIntermission();
   stopHeartbeat();
   forgetHostKey(room.code);
   try {
@@ -263,6 +352,7 @@ function render({ playing, upNext }) {
   if ((playing?.id ?? null) !== loadedRowId) {
     loadedRowId = playing?.id ?? null;
     resetSpeed = true;   // each singer starts at normal speed
+    if (!playing) hideIntermission();
     setTimeout(sendState, 300);
   }
   $('idle').hidden = Boolean(playing);

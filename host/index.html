@@ -21,6 +21,22 @@
           <p>and enter room code</p>
           <div class="idle-code" id="idle-code"></div>
         </div>
+
+        <!-- Between songs: who's up next, with a countdown -->
+        <div class="intermission" id="intermission" hidden>
+          <p class="im-label">Up next</p>
+          <h2 class="im-singer" id="im-singer"></h2>
+          <p class="im-song" id="im-song"></p>
+          <div class="im-count" id="im-count"></div>
+          <button type="button" id="im-start">▶ Start now</button>
+          <p class="im-then" id="im-then"></p>
+        </div>
+
+        <!-- Emoji from phones float up through here -->
+        <div class="reactions" id="reactions" aria-hidden="true"></div>
+
+        <button type="button" class="fs-btn" id="fs-btn"
+                title="Fullscreen that still shows emoji reactions and the up-next screen">⛶ Fullscreen + reactions</button>
       </main>
 
       <aside class="sidebar" id="sidebar">

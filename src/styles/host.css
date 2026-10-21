@@ -42,6 +42,97 @@ body.host { overflow: hidden; height: 100vh; }
 }
 .idle[hidden] { display: none; }
 
+/* Up-next screen between songs (covers the cued, not-yet-playing video) */
+.intermission {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  padding: 16px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 40%, rgb(124 92 255 / 0.45), var(--bg) 72%);
+}
+.intermission[hidden] { display: none; }
+.im-label {
+  margin: 0;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  font-size: 2.4vh;
+}
+.im-singer { margin: 0; font-size: 7vh; line-height: 1.1; }
+.im-song { margin: 0; color: var(--muted); font-size: 3vh; max-width: 80%; }
+.im-count {
+  margin: 0.3em 0;
+  font-size: 12vh;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 40px rgb(255 61 139 / 0.6);
+}
+#im-start { font-size: 2.4vh; padding: 0.7em 1.6em; }
+.im-then { margin: 0.6em 0 0; color: var(--muted); font-size: 2.2vh; }
+
+/* Floating audience reactions */
+.reactions {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+}
+.reaction {
+  position: absolute;
+  bottom: -12vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: float-up var(--dur, 4s) ease-out forwards;
+}
+.reaction-emoji { font-size: 8vh; line-height: 1; filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.5)); }
+.reaction-name {
+  margin-top: 0.3vh;
+  padding: 0.1em 0.6em;
+  border-radius: 999px;
+  background: rgb(15 11 30 / 0.7);
+  font-size: 1.6vh;
+  white-space: nowrap;
+}
+@keyframes float-up {
+  0%   { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  10%  { transform: translate(0, -8vh) scale(1.1); opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translate(var(--drift, 0), -95vh) scale(0.9); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reaction { animation-duration: 2s; }
+}
+
+/* ⛶ "fullscreen with reactions": the page goes fullscreen and the video
+   fills it (sidebar hidden), so overlays still show on top. */
+.fs-btn {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 7;
+  height: 38px;
+  padding: 0 0.8em;
+  border-radius: 10px;
+  background: rgb(15 11 30 / 0.6);
+  color: var(--text);
+  font-size: 0.85rem;
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.fs-btn:hover, .fs-btn:focus-visible { opacity: 1; }
+.host #app.fs-mode { grid-template-columns: 1fr; }
+.host #app.fs-mode .sidebar,
+.host #app.fs-mode .show-sidebar { display: none; }
+
 .now-playing {
   position: absolute;
   left: 2vw;
@@ -269,4 +360,11 @@ body.host { overflow: hidden; height: 100vh; }
   .idle p { font-size: 3vw; }
   .idle-code { font-size: 10vw; }
   .now-playing { font-size: 3vw; bottom: 14vw; }
+  .im-label { font-size: 2.6vw; }
+  .im-singer { font-size: 6vw; }
+  .im-song, .im-then { font-size: 3vw; }
+  .im-count { font-size: 9vw; margin: 0; }
+  #im-start { font-size: 3vw; }
+  .reaction-emoji { font-size: 8vw; }
+  .reaction-name { font-size: 2.4vw; }
 }
