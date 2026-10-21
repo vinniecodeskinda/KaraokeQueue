@@ -15,6 +15,7 @@
         </button>
         <button id="name-chip" class="secondary chip" type="button" hidden></button>
       </header>
+      <h1 class="room-title" id="room-title"></h1>
 
       <section class="now-card" id="now-card" hidden>
         <span class="label">Now singing</span>
@@ -29,6 +30,9 @@
         <button role="tab" class="tab" data-tab="queue" aria-selected="false">
           Queue <span class="badge" id="queue-count">0</span>
         </button>
+        <button role="tab" class="tab" data-tab="people" aria-selected="false">
+          People <span class="badge" id="people-count">0</span>
+        </button>
       </nav>
 
       <section class="panel" data-panel="search">
@@ -37,6 +41,10 @@
 
       <section class="panel" data-panel="queue" hidden>
         <ol class="queue-list" id="queue-list"></ol>
+      </section>
+
+      <section class="panel" data-panel="people" hidden>
+        <ul class="queue-list people-list" id="people-list"></ul>
       </section>
 
       <div class="toast" id="toast" role="status" hidden></div>

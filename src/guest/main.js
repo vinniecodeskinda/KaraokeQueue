@@ -4,22 +4,26 @@ import { showDemoBanner } from '../lib/supabase.js';
 import {
   isDemo,
   fetchActiveQueue,
+  fetchMembers,
   findRoom,
+  joinRoom,
+  renameMember,
   requestSong,
   requestYoutubeSong,
-  subscribeToQueue,
+  subscribeToRoom,
 } from '../lib/queue-api.js';
-import { roomFromUrl, shareJoinLink } from '../lib/rooms.js';
+import { forgetMembership, membershipFor, rememberMembership, roomFromUrl, shareJoinLink } from '../lib/rooms.js';
 import { mountSongSearch } from '../lib/song-search.js';
-import { currentName, hasName, promptName } from '../lib/name-dialog.js';
-import { store } from '../lib/store.js';
+import { currentName, hasName, promptJoin, promptName, saveName } from '../lib/name-dialog.js';
 import { escapeHtml } from '../lib/dom.js';
 
 const $ = (id) => document.getElementById(id);
-const REQUESTS_KEY = 'karaoke.requests';
+const KICKED_RE = /removed from this party/i;
 
 let room;
-let myRequestIds = new Set(store.get(REQUESTS_KEY, []));
+let me;               // { roomId, memberId, memberKey }
+let myName = '';
+let unsubscribe = () => {};
 
 if (isDemo) showDemoBanner();
 init();
@@ -40,56 +44,107 @@ async function init() {
   }
 
   $('room-code').textContent = room.code;
-  document.title = `Karaoke — Room ${room.code}`;
+  $('room-title').textContent = room.name;
+  document.title = `${room.name} — ${room.code}`;
   $('room-chip').addEventListener('click', async () => {
     const how = await shareJoinLink(room.code);
     if (how === 'copied') toast('Join link copied — send it to your friends!');
   });
 
-  $('name-chip').addEventListener('click', async () => {
-    await promptName({ title: 'Change your name' });
-    renderNameChip();
-  });
-  wireTabs();
-
-  // Came straight in via a QR code / join link (skipping the landing page):
-  // offer a name once. Closing it keeps the silly name it's pre-filled with.
-  if (!hasName()) {
-    await promptName({
-      title: `Welcome to room ${room.code}! 🎤`,
-      subtitle: 'What should we call you? This shows next to the songs you pick.',
-      confirmLabel: "Let's sing",
-    });
+  try {
+    if (!(await enterRoom())) return;
+  } catch (err) {
+    return gate(`Couldn't join <b>${escapeHtml(room.name)}</b>: ${escapeHtml(err.message)}`);
   }
+
+  $('name-chip').addEventListener('click', async () => {
+    const wanted = await promptName({ title: 'Change your name' });
+    try {
+      myName = saveName(await renameMember(me.memberKey, wanted));
+      renderNameChip();
+    } catch (err) {
+      handleError(err);
+    }
+  });
   renderNameChip();
+  wireTabs();
 
   mountSongSearch($('search'), { onRequest: request, onError: toast });
 
   refreshQueue();
-  subscribeToQueue(room.id, refreshQueue);
+  refreshMembers();
+  unsubscribe = subscribeToRoom(room.id, { onQueue: refreshQueue, onMembers: refreshMembers });
+}
+
+/**
+ * Become a member of the room: re-use this device's membership if it has
+ * one, otherwise ask for a name (first visit) and the password (locked
+ * rooms). Returns false if they can't get in.
+ */
+async function enterRoom() {
+  const existing = membershipFor(room.code);
+  if (existing) {
+    try {
+      const joined = await joinRoom(room.code, { memberKey: existing.memberKey });
+      return accept(joined);
+    } catch (err) {
+      if (KICKED_RE.test(err.message)) return kicked();
+      forgetMembership(room.code);   // stale key (e.g. room was reset) → join fresh
+    }
+  }
+
+  let askName = !hasName();
+  let error = '';
+  for (;;) {
+    if (askName || room.hasPassword) {
+      const answer = await promptJoin({
+        title: `Welcome to ${room.name}! 🎤`,
+        subtitle: askName ? 'What should we call you? This shows next to the songs you pick.' : '',
+        askName,
+        askPassword: room.hasPassword,
+        error,
+      });
+      if (!answer) {
+        gate(`<b>${escapeHtml(room.name)}</b> needs a password to join.<br />
+              <a class="btn" href="${location.href}">Try again</a>`);
+        return false;
+      }
+      askName = false;
+      try {
+        return accept(await joinRoom(room.code, { name: answer.name, password: answer.password }));
+      } catch (err) {
+        if (!/password/i.test(err.message)) throw err;
+        error = err.message;   // wrong password → ask again
+      }
+    } else {
+      return accept(await joinRoom(room.code, { name: currentName() }));
+    }
+  }
+}
+
+function accept(joined) {
+  me = { roomId: joined.room.id, memberId: joined.memberId, memberKey: joined.memberKey };
+  myName = joined.name;
+  rememberMembership(room.code, me);
+  return true;
 }
 
 // ------------------------------------------------------------- request
 
-async function request({ kind, song }) {
-  const name = currentName();
+async function request({ song, kind }) {
   try {
-    const id =
-      kind === 'catalog'
-        ? await requestSong(room.id, song.id, name)
-        : await requestYoutubeSong(room.id, song, name);
-    myRequestIds.add(id);
-    store.set(REQUESTS_KEY, [...myRequestIds]);
-    toast(`🎶 “${song.title}” added for ${name}!`);
+    if (kind === 'catalog') await requestSong(me.memberKey, song.id);
+    else await requestYoutubeSong(me.memberKey, song);
+    toast(`🎶 “${song.title}” added for ${myName}!`);
     refreshQueue();
   } catch (err) {
-    toast(err.message);
+    handleError(err);
   }
 }
 
 function renderNameChip() {
   $('name-chip').hidden = false;
-  $('name-chip').textContent = `👤 ${currentName()}`;
+  $('name-chip').textContent = `👤 ${myName}`;
   $('name-chip').title = 'Change your name';
 }
 
@@ -110,12 +165,13 @@ async function refreshQueue() {
     $('now-meta').textContent = [playing.song.artist, `sung by ${playing.guest_name}`].filter(Boolean).join(' · ');
   }
 
+  const mine = (row) => row.member_id === me.memberId;
   $('queue-count').textContent = upNext.length;
   $('queue-list').innerHTML = upNext.length
     ? upNext
         .map(
           (row) => `
-          <li class="${myRequestIds.has(row.id) ? 'mine' : ''}">
+          <li class="${mine(row) ? 'mine' : ''}">
             <span class="title">${escapeHtml(row.song.title)}</span>
             <span class="artist">${row.song.artist ? `${escapeHtml(row.song.artist)} · ` : ''}${escapeHtml(row.guest_name)}</span>
           </li>`,
@@ -123,22 +179,21 @@ async function refreshQueue() {
         .join('')
     : '<li class="empty">The queue is empty. Be the first!</li>';
 
-  renderMyStatus(playing, upNext);
+  renderMyStatus(playing, upNext, mine);
 }
 
-/** "You're up next" / "3 songs ahead of you" for this phone's own requests. */
-function renderMyStatus(playing, upNext) {
+/** "You're up next" / "3 songs ahead of you" for this member's requests. */
+function renderMyStatus(playing, upNext, mine) {
   const el = $('my-status');
-  if (playing && myRequestIds.has(playing.id)) {
+  if (playing && mine(playing)) {
     el.hidden = false;
     el.className = 'my-status now';
     el.textContent = '🎤 You’re on! Grab the mic.';
     return;
   }
-  const position = upNext.findIndex((row) => myRequestIds.has(row.id));
+  const position = upNext.findIndex(mine);
   if (position === -1) {
     el.hidden = true;
-    pruneOldRequests(playing, upNext);
     return;
   }
   const ahead = position + (playing ? 1 : 0);
@@ -148,17 +203,47 @@ function renderMyStatus(playing, upNext) {
     ahead === 0 ? '⏭ You’re up next!' : `⏳ ${ahead} song${ahead === 1 ? '' : 's'} ahead of you`;
 }
 
-/** Forget request ids that are no longer active so localStorage stays small. */
-function pruneOldRequests(playing, upNext) {
-  const active = new Set([playing?.id, ...upNext.map((r) => r.id)]);
-  const kept = [...myRequestIds].filter((id) => active.has(id));
-  if (kept.length !== myRequestIds.size) {
-    myRequestIds = new Set(kept);
-    store.set(REQUESTS_KEY, kept);
+// ------------------------------------------------------------- people
+
+async function refreshMembers() {
+  let members;
+  try {
+    members = await fetchMembers(room.id);
+  } catch (err) {
+    toast(err.message);
+    return;
   }
+  // Not in the list any more → the host removed us.
+  if (!members.some((m) => m.id === me.memberId)) {
+    kicked();
+    return;
+  }
+  $('people-count').textContent = members.length;
+  $('people-list').innerHTML = members
+    .map(
+      (m) => `
+      <li class="${m.id === me.memberId ? 'mine' : ''}">
+        <span class="title">${escapeHtml(m.name)}</span>
+        <span class="artist">${m.is_host ? '🎛️ Host' : m.id === me.memberId ? 'You' : 'Guest'}</span>
+      </li>`,
+    )
+    .join('');
 }
 
 // ------------------------------------------------------------- ui bits
+
+function handleError(err) {
+  if (KICKED_RE.test(err.message)) kicked();
+  else toast(err.message);
+}
+
+function kicked() {
+  unsubscribe();
+  // Keep the (now refused) membership so reopening the link still says
+  // "removed" instead of quietly joining as someone new.
+  gate(`The host removed you from <b>${escapeHtml(room.name)}</b>.`);
+  return false;
+}
 
 function wireTabs() {
   document.querySelectorAll('.tab').forEach((tab) =>
@@ -178,7 +263,7 @@ function gate(html) {
   $('gate').innerHTML = `
     <div class="gate-card">
       <p>${html}</p>
-      <a class="btn" href="/">Enter a different code</a>
+      <a class="btn secondary" href="/">Back to start</a>
     </div>`;
 }
 

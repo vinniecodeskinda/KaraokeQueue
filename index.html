@@ -18,17 +18,23 @@
         <label for="name-input"><h2>Your name</h2></label>
         <div class="name-row">
           <input id="name-input" maxlength="40" autocomplete="nickname" placeholder="Your name" />
-          <button type="button" class="secondary dice" id="dice-btn" title="Random silly name" aria-label="Random silly name">🎲</button>
+          <button type="button" class="secondary dice" id="dice-btn" title="Random singer pun" aria-label="Random singer pun">🎲</button>
         </div>
-        <p class="hint">Shown next to the songs you pick. Leave it blank for a random silly name.</p>
+        <p class="hint">Shown next to the songs you pick. Leave it blank for a random singer pun.</p>
       </section>
 
       <section class="entry-card" aria-labelledby="join-title">
         <h2 id="join-title">Join a party</h2>
-        <form id="join-form" class="code-form" autocomplete="off">
-          <input id="code-input" name="code" inputmode="text" autocapitalize="characters"
-                 spellcheck="false" maxlength="5" placeholder="ROOM CODE" aria-label="Room code" />
-          <button type="submit" id="join-btn">Join</button>
+        <form id="join-form" autocomplete="off">
+          <div class="code-form">
+            <input id="code-input" name="code" inputmode="text" autocapitalize="characters"
+                   spellcheck="false" maxlength="5" placeholder="ROOM CODE" aria-label="Room code" />
+            <button type="submit" id="join-btn">Join</button>
+          </div>
+          <div id="join-pw-box" hidden>
+            <label class="field-label" for="join-pw">This room has a password</label>
+            <input id="join-pw" class="text-input" type="password" autocomplete="off" placeholder="Room password" />
+          </div>
         </form>
         <p class="hint">Got a link or QR code? Just open it — you'll land straight in the room.</p>
       </section>
@@ -38,7 +44,11 @@
       <section class="entry-card" aria-labelledby="host-title">
         <h2 id="host-title">Host a party</h2>
         <p class="hint">Open this on the TV or laptop that will play the videos.</p>
-        <button type="button" id="host-btn" class="wide">Create a room</button>
+        <label class="field-label" for="room-name">Room name <span class="optional">(optional)</span></label>
+        <input id="room-name" class="text-input" maxlength="60" autocomplete="off" />
+        <label class="field-label" for="room-pw">Password <span class="optional">(optional — leave blank for an open room)</span></label>
+        <input id="room-pw" class="text-input" type="password" autocomplete="new-password" placeholder="No password" />
+        <button type="button" id="host-btn" class="wide host-btn">Create a room</button>
         <div id="recent-rooms" class="recent" hidden></div>
       </section>
 

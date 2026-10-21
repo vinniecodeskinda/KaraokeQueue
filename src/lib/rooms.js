@@ -23,6 +23,28 @@ export function rememberHosting(room) {
   store.set(HOSTING_KEY, Object.fromEntries(recent));
 }
 
+// Rooms this device has joined: { [code]: { roomId, memberId, memberKey } }.
+// The member key is what lets this device request songs (and get kicked).
+const MEMBERSHIPS_KEY = 'karaoke.memberships';
+
+export function membershipFor(code) {
+  return store.get(MEMBERSHIPS_KEY, {})[code] ?? null;
+}
+
+export function rememberMembership(code, { roomId, memberId, memberKey }) {
+  const all = store.get(MEMBERSHIPS_KEY, {});
+  all[code] = { roomId, memberId, memberKey, at: Date.now() };
+  // Keep the 20 most recent rooms only.
+  const recent = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, 20);
+  store.set(MEMBERSHIPS_KEY, Object.fromEntries(recent));
+}
+
+export function forgetMembership(code) {
+  const all = store.get(MEMBERSHIPS_KEY, {});
+  delete all[code];
+  store.set(MEMBERSHIPS_KEY, all);
+}
+
 /** { id, hostKey } if this device hosts `code`, else null. */
 export function hostingFor(code) {
   return store.get(HOSTING_KEY, {})[code] ?? null;

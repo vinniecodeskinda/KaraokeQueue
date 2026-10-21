@@ -180,6 +180,24 @@ dialog input {
   background: var(--bg);
   color: var(--text);
 }
+.field-label { display: block; font-size: 0.8rem; color: var(--muted); margin: 12px 0 6px; }
+.field-label:first-of-type { margin-top: 0; }
+.dialog-error { color: var(--accent); font-weight: 600; margin: 10px 0 0 !important; }
+.dialog-error[hidden], .name-field[hidden], .pw-field[hidden], .name-dialog-sub[hidden] { display: none; }
+input[type='password'].pw-input,
+.text-input {
+  width: 100%;
+  font: inherit;
+  font-size: 16px;
+  padding: 0.75em 1em;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+.text-input:focus, .pw-input:focus { border-color: var(--accent-2); }
+
 /* Name input + 🎲 random-name button (landing page and name dialog) */
 .name-row { display: flex; gap: 8px; }
 .name-row input {

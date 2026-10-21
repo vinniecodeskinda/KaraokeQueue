@@ -1,26 +1,95 @@
 // Supabase-backed implementation of the queue API (see queue-api.js).
-// Every call is a single small request — the app never polls; live
-// updates come from subscribeToQueue().
+// Reads go straight to tables; every write is an RPC that checks the
+// caller's member key / host key (see supabase/schema.sql). The app never
+// polls — live updates come from subscribeToRoom().
 import { supabase } from './supabase.js';
 
 const QUEUE_SELECT = `
-  id, guest_name, status, created_at, started_at,
+  id, guest_name, member_id, status, created_at, started_at,
   song:songs ( id, title, artist, youtube_video_id )
 `;
 
-/** Create a room. Returns { id, code, hostKey } — keep hostKey on this device. */
-export async function createRoom() {
-  const { data, error } = await supabase.rpc('create_room');
+/**
+ * Create a room. Returns { id, code, name, hasPassword, hostKey, memberId,
+ * memberKey, memberName } — hostKey and memberKey stay on this device.
+ */
+export async function createRoom({ name, password, hostName }) {
+  const { data, error } = await supabase.rpc('create_room', {
+    p_name: name ?? '',
+    p_password: password ?? '',
+    p_host_name: hostName ?? '',
+  });
   if (error) throw friendly(error);
-  const row = data[0];
-  return { id: row.id, code: row.code, hostKey: row.host_key };
+  return {
+    id: data.id,
+    code: data.code,
+    name: data.name,
+    hasPassword: data.has_password,
+    hostKey: data.host_key,
+    memberId: data.member_id,
+    memberKey: data.member_key,
+    memberName: data.member_name,
+  };
 }
 
-/** Look up a room by its code. Returns { id, code } or null. */
+/** Public room info by code: { id, code, name, hasPassword } or null. */
 export async function findRoom(code) {
   const { data, error } = await supabase.rpc('get_room', { p_code: code });
   if (error) throw friendly(error);
-  return data[0] ?? null;
+  return data ? { id: data.id, code: data.code, name: data.name, hasPassword: data.has_password } : null;
+}
+
+/**
+ * Join a room (or re-enter with this device's member key). Returns
+ * { room: {id, code, name}, memberId, memberKey, name, isHost }.
+ */
+export async function joinRoom(code, { password, name, memberKey, hostKey } = {}) {
+  const { data, error } = await supabase.rpc('join_room', {
+    p_code: code,
+    p_password: password ?? null,
+    p_name: name ?? null,
+    p_member_key: memberKey ?? null,
+    p_host_key: hostKey ?? null,
+  });
+  if (error) throw friendly(error);
+  return {
+    room: data.room,
+    memberId: data.member_id,
+    memberKey: data.member_key,
+    name: data.name,
+    isHost: data.is_host,
+  };
+}
+
+/** Change this member's display name; returns the name actually used. */
+export async function renameMember(memberKey, name) {
+  const { data, error } = await supabase.rpc('rename_member', { p_member_key: memberKey, p_name: name });
+  if (error) throw friendly(error);
+  return data;
+}
+
+/** Everyone currently in the room (kicked members excluded), host first. */
+export async function fetchMembers(roomId) {
+  const { data, error } = await supabase
+    .from('members')
+    .select('id, name, is_host, joined_at')
+    .eq('room_id', roomId)
+    .eq('kicked', false)
+    .order('is_host', { ascending: false })
+    .order('joined_at', { ascending: true })
+    .limit(200);
+  if (error) throw error;
+  return data;
+}
+
+/** Host only: remove someone from the room and drop their waiting songs. */
+export async function kickMember(roomId, hostKey, memberId) {
+  const { error } = await supabase.rpc('kick_member', {
+    p_room_id: roomId,
+    p_host_key: hostKey,
+    p_member_id: memberId,
+  });
+  if (error) throw friendly(error);
 }
 
 /** Active queue for a room: the playing row (if any) and queued rows in order. */
@@ -57,25 +126,23 @@ export async function searchSongs(term, limit = 25) {
   return data;
 }
 
-/** Request a catalog song into a room. Returns the new queue row id. */
-export async function requestSong(roomId, songId, guestName) {
-  const { data, error } = await supabase
-    .from('queue')
-    .insert({ room_id: roomId, song_id: songId, guest_name: guestName })
-    .select('id')
-    .single();
+/** Request a catalog song as this member. Returns the new queue row id. */
+export async function requestSong(memberKey, songId) {
+  const { data, error } = await supabase.rpc('request_song', {
+    p_member_key: memberKey,
+    p_song_id: songId,
+  });
   if (error) throw friendly(error);
-  return data.id;
+  return data;
 }
 
 /** Request a YouTube search result that isn't in the catalog yet. */
-export async function requestYoutubeSong(roomId, { videoId, title, artist, channel }, guestName) {
+export async function requestYoutubeSong(memberKey, { videoId, title, artist, channel }) {
   const { data, error } = await supabase.rpc('request_youtube_song', {
-    p_room_id: roomId,
+    p_member_key: memberKey,
     p_video_id: videoId,
     p_title: title,
     p_artist: artist ?? channel ?? '',   // search results carry the uploader as `channel`
-    p_guest_name: guestName,
   });
   if (error) throw friendly(error);
   return data;
@@ -114,33 +181,38 @@ export async function searchYoutube(term, { karaoke = true } = {}) {
 }
 
 /**
- * Subscribe to one room's queue. Calls `onChange()` (debounced) so callers
- * simply re-fetch — the queue is tiny, and this avoids subtle bugs from
- * patching local state with partial Realtime payloads.
+ * Subscribe to one room's queue and member changes. Callbacks are debounced
+ * and callers simply re-fetch — the data is tiny, and this avoids subtle
+ * bugs from patching local state with partial Realtime payloads.
  * Returns an unsubscribe function.
  */
-export function subscribeToQueue(roomId, onChange, onStatus = () => {}) {
-  let timer;
-  const fire = () => {
-    clearTimeout(timer);
-    timer = setTimeout(onChange, 120);
+export function subscribeToRoom(roomId, { onQueue = () => {}, onMembers = () => {} }, onStatus = () => {}) {
+  const debounce = (fn, ms = 120) => {
+    let t;
+    return () => {
+      clearTimeout(t);
+      t = setTimeout(fn, ms);
+    };
   };
+  const queueChanged = debounce(onQueue);
+  const membersChanged = debounce(onMembers);
+  const filter = `room_id=eq.${roomId}`;
   const channel = supabase
-    .channel(`queue-${roomId}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'queue', filter: `room_id=eq.${roomId}` },
-      fire,
-    )
+    .channel(`room-${roomId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'queue', filter }, queueChanged)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'members', filter }, membersChanged)
     .subscribe((status) => {
       onStatus(status);
       // After a dropped connection comes back, resync anything we missed.
-      if (status === 'SUBSCRIBED') fire();
+      if (status === 'SUBSCRIBED') {
+        queueChanged();
+        membersChanged();
+      }
     });
   return () => supabase.removeChannel(channel);
 }
 
 function friendly(error) {
-  // Surface our triggers' human-readable messages (queue full, per-guest cap).
+  // Surface our functions' human-readable messages (wrong password, kicked, caps).
   return new Error(error.message || 'Something went wrong');
 }

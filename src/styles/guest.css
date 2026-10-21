@@ -55,12 +55,22 @@ body.guest { min-height: 100vh; }
 }
 .my-status.now { border-color: var(--accent); }
 
+.room-title {
+  margin: 0 0 12px;
+  font-size: 1.35rem;
+  overflow-wrap: anywhere;
+}
+
+.people-list { counter-reset: none; }
+.people-list li { padding-left: 12px; }
+.people-list li::before { content: none; }
+
 .tabs {
   position: sticky;
   top: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 6px;
   padding: 8px 0;
   background: var(--bg);

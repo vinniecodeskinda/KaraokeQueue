@@ -47,6 +47,10 @@ body.entry {
 .code-form input:focus { border-color: var(--accent-2); }
 
 button.wide { width: 100%; padding: 0.8em; font-size: 1.05rem; }
+.host-btn { margin-top: 16px; }
+.optional { color: var(--muted); font-weight: 400; opacity: 0.8; }
+#join-pw-box { margin-top: 4px; }
+#join-pw-box[hidden] { display: none; }
 
 .name-card { margin-bottom: 14px; }
 .name-card label h2 { margin: 0 0 12px; }

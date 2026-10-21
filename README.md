@@ -8,7 +8,12 @@ Split-screen karaoke for a house party:
 | `/host/?room=CODE`    | The TV         | YouTube player, room code + QR + "Copy join link", song search, collapsible "Up next" sidebar (button or **Q**), auto-advancing queue |
 | `/join/?room=CODE`    | Guests' phones | The join link / QR target. Search, request songs, see how many songs are ahead of you |
 
-No sign-in anywhere. Creating a room gives the host's device a secret host key, kept in its browser, so only that device can play or skip songs. Guests only need the code or link. Both screens have a **Prioritize karaoke versions** switch: it ranks karaoke/lyric versions first and adds "karaoke" to YouTube searches.
+No sign-in anywhere. Creating a room gives the host's device a secret host key, kept in its browser, so only that device can play, skip or remove people. Guests only need the code or link.
+
+- **Names:** each person picks a name once, on the landing page or in a one-time welcome box when they open a join link. Leave it blank and you get a singer pun like "Celine Dijon". After that, requests go straight through with no prompt.
+- **Rooms:** an optional room name (default "<host>'s Room") and an optional password. Without a password, the room is open to anyone with the code.
+- **People:** guests see who has joined in a People tab. On the TV, the host can **Remove** anyone. Their waiting songs are dropped and that device can't rejoin or request.
+- **Search:** both screens have a **Prioritize karaoke versions** switch. It ranks karaoke/lyric versions first and adds "karaoke" to YouTube searches.
 
 Built to run entirely on free tiers: **Cloudflare Pages** (static site + one Pages Function) and **Supabase** (Postgres + Realtime). There's no server to keep running.
 
@@ -82,7 +87,13 @@ values ('Song', 'Artist', 'XXXXXXXXXXX', '{pop,english}');
 The video ID is the 11 characters after `v=` in a YouTube URL. Karaoke or lyric versions work best. Check that they play when embedded.
 
 ## Security notes
-This is a trust-your-guests app with no logins. Anyone with a room's code can request songs into that room. Only the device holding the room's host key can advance or skip; `advance_queue()` checks it. Guests can't read the `rooms` table, so host keys never leave the server. Rooms idle for 2+ days are removed by `purge_old_queue()`.
+This is a trust-your-guests app with no logins.
+
+- **All changes go through server functions.** Guests can read songs, the queue and the member list, but every change goes through `SECURITY DEFINER` functions. Those functions check a per-device **member key** (to request songs) or the room's **host key** (to advance, skip or remove someone).
+- **Keys stay private.** Guests can't read `rooms` or `member_keys`, so neither kind of key is ever readable by other guests.
+- **Passwords** are stored as bcrypt hashes and checked when someone joins.
+- **Removal is per device.** A removed person can't rejoin from that device. Someone who clears their browser data can rejoin as a new person, unless the room has a password; if that matters, set one.
+- **Cleanup:** rooms idle for 2+ days are removed by `purge_old_queue()`.
 
 ## Project layout
 ```

@@ -10,10 +10,14 @@ const impl = isDemo ? demoBackend : supabaseBackend;
 
 export const createRoom = (...a) => impl.createRoom(...a);
 export const findRoom = (...a) => impl.findRoom(...a);
+export const joinRoom = (...a) => impl.joinRoom(...a);
+export const renameMember = (...a) => impl.renameMember(...a);
+export const fetchMembers = (...a) => impl.fetchMembers(...a);
+export const kickMember = (...a) => impl.kickMember(...a);
 export const fetchActiveQueue = (...a) => impl.fetchActiveQueue(...a);
 export const searchSongs = (...a) => impl.searchSongs(...a);
 export const requestSong = (...a) => impl.requestSong(...a);
 export const requestYoutubeSong = (...a) => impl.requestYoutubeSong(...a);
 export const advanceQueue = (...a) => impl.advanceQueue(...a);
 export const searchYoutube = (...a) => impl.searchYoutube(...a);
-export const subscribeToQueue = (...a) => impl.subscribeToQueue(...a);
+export const subscribeToRoom = (...a) => impl.subscribeToRoom(...a);

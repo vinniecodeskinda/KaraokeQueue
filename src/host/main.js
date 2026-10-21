@@ -3,15 +3,26 @@ import '../styles/base.css';
 import '../styles/host.css';
 import { showDemoBanner } from '../lib/supabase.js';
 import {
+  fetchMembers,
   findRoom,
   isDemo,
+  joinRoom,
+  kickMember,
+  renameMember,
   requestSong,
   requestYoutubeSong,
-  subscribeToQueue,
+  subscribeToRoom,
 } from '../lib/queue-api.js';
-import { hostingFor, joinUrl, roomFromUrl, shareJoinLink } from '../lib/rooms.js';
+import {
+  hostingFor,
+  joinUrl,
+  membershipFor,
+  rememberMembership,
+  roomFromUrl,
+  shareJoinLink,
+} from '../lib/rooms.js';
 import { mountSongSearch } from '../lib/song-search.js';
-import { currentName, promptName } from '../lib/name-dialog.js';
+import { currentName, promptName, saveName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
 import { createPlayer } from './youtube-player.js';
 import { QueueController } from './queue-controller.js';
@@ -19,6 +30,11 @@ import { escapeHtml } from '../lib/dom.js';
 
 const $ = (id) => document.getElementById(id);
 const COLLAPSED_KEY = 'karaoke.host.collapsed';
+
+let room;
+let hosting;
+let me;           // this device's membership: { roomId, memberId, memberKey }
+let controller;   // created on "Start the party"
 
 if (isDemo) showDemoBanner();
 init();
@@ -30,7 +46,6 @@ async function init() {
     return;
   }
 
-  let room;
   try {
     room = await findRoom(code);
   } catch (err) {
@@ -40,7 +55,7 @@ async function init() {
     return gate(`Room <b>${escapeHtml(code)}</b> doesn't exist (rooms expire after 2 idle days).`, true);
   }
 
-  const hosting = hostingFor(room.code);
+  hosting = hostingFor(room.code);
   if (!hosting || hosting.id !== room.id) {
     return gate(
       `This device isn't the host of room <b>${escapeHtml(room.code)}</b>.<br />
@@ -49,39 +64,62 @@ async function init() {
     );
   }
 
-  showRoom(room.code);
+  // The host is a member too (that's who TV-added songs are credited to).
+  // Rooms made before members existed get a host membership on first visit.
+  try {
+    const joined = await joinRoom(room.code, {
+      name: currentName(),
+      memberKey: membershipFor(room.code)?.memberKey,
+      hostKey: hosting.hostKey,
+    });
+    me = { roomId: joined.room.id, memberId: joined.memberId, memberKey: joined.memberKey };
+    rememberMembership(room.code, me);
+    renderHostName(joined.name);
+  } catch (err) {
+    return gate(`Couldn't open the room: ${escapeHtml(err.message)}`, true);
+  }
+
+  showRoom();
   wireCollapse();
 
-  // Songs added from the TV go in under the host's name (set on the landing page).
-  const renderHostName = () => ($('host-name').textContent = currentName());
-  renderHostName();
   $('host-name-btn').addEventListener('click', async () => {
-    await promptName({ title: 'Change your name' });
-    renderHostName();
+    const wanted = await promptName({ title: 'Change your name' });
+    try {
+      renderHostName(saveName(await renameMember(me.memberKey, wanted)));
+    } catch (err) {
+      toast(err.message);
+    }
   });
+
   mountSongSearch($('search'), {
     buttonLabel: 'Add',
     onError: toast,
     onRequest: async ({ kind, song }) => {
-      const name = currentName();
       try {
-        if (kind === 'catalog') await requestSong(room.id, song.id, name);
-        else await requestYoutubeSong(room.id, song, name);
-        toast(`🎶 “${song.title}” added for ${name}`);
+        if (kind === 'catalog') await requestSong(me.memberKey, song.id);
+        else await requestYoutubeSong(me.memberKey, song);
+        toast(`🎶 “${song.title}” added for ${$('host-name').textContent}`);
       } catch (err) {
         toast(err.message);
       }
     },
   });
 
-  $('start-btn').addEventListener('click', () => start(room, hosting.hostKey), { once: true });
+  $('people').addEventListener('click', onKickClick);
+  refreshMembers();
+  subscribeToRoom(
+    room.id,
+    { onQueue: () => controller?.refresh(), onMembers: refreshMembers },
+    (status) => ($('conn').dataset.status = status),
+  );
+
+  $('start-btn').addEventListener('click', start, { once: true });
 }
 
-async function start(room, hostKey) {
+async function start() {
   $('start-btn').disabled = true;
   $('start-btn').textContent = 'Loading…';
 
-  let controller;
   const player = await createPlayer('player', {
     onEnded: () => controller?.handleEnded(),
     onError: (code, reason) => controller?.handleError(code, reason),
@@ -90,16 +128,10 @@ async function start(room, hostKey) {
   controller = new QueueController({
     player,
     roomId: room.id,
-    hostKey,
+    hostKey: hosting.hostKey,
     onChange: render,
     onNotice: toast,
   });
-
-  subscribeToQueue(
-    room.id,
-    () => controller.refresh(),
-    (status) => ($('conn').dataset.status = status),
-  );
 
   // Skip is button-only: a single-letter hotkey on the TV is too easy to hit by accident.
   $('skip-btn').addEventListener('click', () => controller.skip());
@@ -131,12 +163,57 @@ function render({ playing, upNext }) {
     : '<li class="empty">Queue is empty — add a song!</li>';
 }
 
-function showRoom(code) {
+// ------------------------------------------------------------- people
+
+async function refreshMembers() {
+  let members;
+  try {
+    members = await fetchMembers(room.id);
+  } catch (err) {
+    toast(err.message);
+    return;
+  }
+  $('people-count').textContent = members.length;
+  $('people').innerHTML = members
+    .map(
+      (m) => `
+      <li>
+        <span class="person">${escapeHtml(m.name)}${m.is_host ? ' <span class="badge-host">host</span>' : ''}</span>
+        ${m.is_host ? '' : `<button type="button" class="secondary small kick" data-id="${m.id}" data-name="${escapeHtml(m.name)}">Remove</button>`}
+      </li>`,
+    )
+    .join('');
+}
+
+async function onKickClick(e) {
+  const btn = e.target.closest('.kick');
+  if (!btn) return;
+  if (!confirm(`Remove ${btn.dataset.name} from the party? Their waiting songs will be dropped.`)) return;
+  btn.disabled = true;
+  try {
+    await kickMember(room.id, hosting.hostKey, btn.dataset.id);
+    toast(`${btn.dataset.name} was removed.`);
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+  }
+}
+
+// ------------------------------------------------------------- room info
+
+function renderHostName(name) {
+  $('host-name').textContent = name;
+}
+
+function showRoom() {
+  const { code, name } = room;
   const url = joinUrl(code);
   const site = new URL('/', url).host;
   for (const id of ['room-code', 'idle-code', 'pill-code', 'overlay-code']) $(id).textContent = code;
+  for (const id of ['room-name', 'idle-name', 'overlay-name']) $(id).textContent = name;
+  $('room-lock').hidden = !room.hasPassword;
   $('idle-site').textContent = site;
-  document.title = `Karaoke — Room ${code}`;
+  document.title = `${name} — ${code}`;
   QRCode.toCanvas($('join-qr'), url, { width: 132, margin: 1 }).catch(console.error);
   $('copy-link').addEventListener('click', async () => {
     const how = await shareJoinLink(code);

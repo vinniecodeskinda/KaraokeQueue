@@ -16,7 +16,7 @@
           <span id="np-song"></span>
         </div>
         <div class="idle" id="idle">
-          <h1>🎤 Karaoke Night</h1>
+          <h1>🎤 <span id="idle-name">Karaoke Night</span></h1>
           <p>Scan the QR code, or go to <b class="idle-site" id="idle-site"></b></p>
           <p>and enter room code</p>
           <div class="idle-code" id="idle-code"></div>
@@ -27,7 +27,8 @@
         <header class="room-card">
           <canvas id="join-qr" width="132" height="132" aria-label="QR code to join this room"></canvas>
           <div class="room-info">
-            <span class="label">Room code</span>
+            <span class="room-name" id="room-name"></span>
+            <span class="label">Room code <span id="room-lock" title="Password protected" hidden>🔒</span></span>
             <strong class="room-code" id="room-code"></strong>
             <button type="button" class="secondary small" id="copy-link">🔗 Copy join link</button>
           </div>
@@ -41,6 +42,11 @@
             <button type="button" class="link-btn" id="host-name-btn">change</button>
           </p>
           <div id="search"></div>
+        </details>
+
+        <details class="people" id="people-box">
+          <summary>👥 People <span class="count" id="people-count">0</span></summary>
+          <ul class="people-list" id="people"></ul>
         </details>
 
         <section class="up-next">
@@ -61,7 +67,7 @@
       <div class="toast" id="toast" role="status" hidden></div>
 
       <div class="start-overlay" id="start-overlay">
-        <h1>🎤 Your room is ready</h1>
+        <h1>🎤 <span id="overlay-name">Your room</span> is ready</h1>
         <p class="overlay-label">Room code</p>
         <p class="overlay-code" id="overlay-code"></p>
         <button id="start-btn" type="button">▶ Start the party</button>
