@@ -167,6 +167,7 @@ body.host { overflow: hidden; height: 100vh; }
   font-weight: 600;
 }
 .kick { flex: none; }
+.you { color: var(--muted); font-size: 0.85em; }
 
 .up-next { flex: 1; overflow-y: auto; padding: 14px; min-height: 0; }
 .up-next h2 {
@@ -261,4 +262,10 @@ body.host { overflow: hidden; height: 100vh; }
   .host #app { grid-template-columns: 1fr; grid-template-rows: 56vw auto; height: auto; }
   .host #app.collapsed { grid-template-rows: 56vw; }
   .sidebar { border-left: 0; border-top: 1px solid var(--border); }
+  /* The waiting screen is sized for a TV; scale it to the narrow player. */
+  .stage { overflow: hidden; }
+  .idle h1 { font-size: 5.5vw; margin-bottom: 0.2em; }
+  .idle p { font-size: 3vw; }
+  .idle-code { font-size: 10vw; }
+  .now-playing { font-size: 3vw; bottom: 14vw; }
 }

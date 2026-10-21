@@ -2,28 +2,47 @@ import '../styles/base.css';
 import '../styles/guest.css';
 import { showDemoBanner } from '../lib/supabase.js';
 import {
+  advanceQueue,
   isDemo,
   fetchActiveQueue,
-  fetchMembers,
+  fetchMemberStatus,
   findRoom,
   joinRoom,
+  kickMember,
   renameMember,
   requestSong,
   requestYoutubeSong,
   subscribeToRoom,
 } from '../lib/queue-api.js';
-import { forgetMembership, membershipFor, rememberMembership, roomFromUrl, shareJoinLink } from '../lib/rooms.js';
+import {
+  forgetHostKey,
+  forgetMembership,
+  hostingFor,
+  hostUrl,
+  membershipFor,
+  rememberHostKey,
+  rememberMembership,
+  roomFromUrl,
+  shareJoinLink,
+} from '../lib/rooms.js';
+import { startHeartbeat, watchForHostHandover } from '../lib/host-session.js';
 import { mountSongSearch } from '../lib/song-search.js';
 import { currentName, hasName, promptJoin, promptName, saveName } from '../lib/name-dialog.js';
+import { store } from '../lib/store.js';
 import { escapeHtml } from '../lib/dom.js';
 
 const $ = (id) => document.getElementById(id);
 const KICKED_RE = /removed from this party/i;
+const KICKED_KEY = 'karaoke.kickedFrom';   // room ids this device was removed from
 
 let room;
-let me;               // { roomId, memberId, memberKey }
-let myName = '';
-let unsubscribe = () => {};
+let me;               // { memberId, memberKey, name, joinedAt }
+let hostKey = null;   // set while this phone is the host
+let people = [];      // who's connected right now (presence)
+let playingRowId = null;
+let live = { unsubscribe() {}, track: async () => {} };
+let stopHeartbeat = () => {};
+let stopWatching = () => {};
 
 if (isDemo) showDemoBanner();
 init();
@@ -41,6 +60,12 @@ async function init() {
   }
   if (!room) {
     return gate(`There's no room called <b>${escapeHtml(code)}</b>. Check the code on the TV.`);
+  }
+  if (!room.open) {
+    return gate(`<b>${escapeHtml(room.name)}</b> has closed — everyone left.`);
+  }
+  if (store.get(KICKED_KEY, []).includes(room.id)) {
+    return gate(`The host removed you from <b>${escapeHtml(room.name)}</b>.`);
   }
 
   $('room-code').textContent = room.code;
@@ -60,36 +85,52 @@ async function init() {
   $('name-chip').addEventListener('click', async () => {
     const wanted = await promptName({ title: 'Change your name' });
     try {
-      myName = saveName(await renameMember(me.memberKey, wanted));
+      me.name = saveName(await renameMember(me.memberKey, wanted));
       renderNameChip();
+      live.track({ name: me.name });
     } catch (err) {
       handleError(err);
     }
   });
   renderNameChip();
   wireTabs();
+  $('people-list').addEventListener('click', onKickClick);
+  $('np-skip').addEventListener('click', skipCurrent);
+  $('open-tv').href = hostUrl(room.code);
 
   mountSongSearch($('search'), { onRequest: request, onError: toast });
 
+  live = subscribeToRoom(
+    room.id,
+    { onQueue: refreshQueue, onMembers: checkMyStatus, onPresence: renderPeople },
+    () => {},
+    {
+      key: me.memberId,
+      payload: { member_id: me.memberId, name: me.name, is_host: false, joined_at: me.joinedAt },
+    },
+  );
   refreshQueue();
-  refreshMembers();
-  unsubscribe = subscribeToRoom(room.id, { onQueue: refreshQueue, onMembers: refreshMembers });
+
+  // Already host in this session (e.g. took over, then reloaded)?
+  const hosting = hostingFor(room.code);
+  if (hosting?.id === room.id) becomeHost(hosting.hostKey, { quiet: true });
+  else watchHandover();
 }
 
 /**
- * Become a member of the room: re-use this device's membership if it has
- * one, otherwise ask for a name (first visit) and the password (locked
- * rooms). Returns false if they can't get in.
+ * Join for this session: reuse this tab's membership if it has one (a
+ * reload), otherwise ask for a name (first visit) and the password (locked
+ * rooms). A closed tab/app starts over as a new person. Returns false if
+ * they can't get in.
  */
 async function enterRoom() {
   const existing = membershipFor(room.code);
   if (existing) {
     try {
-      const joined = await joinRoom(room.code, { memberKey: existing.memberKey });
-      return accept(joined);
+      return accept(await joinRoom(room.code, { memberKey: existing.memberKey }));
     } catch (err) {
       if (KICKED_RE.test(err.message)) return kicked();
-      forgetMembership(room.code);   // stale key (e.g. room was reset) → join fresh
+      forgetMembership(room.code);   // stale session → join fresh
     }
   }
 
@@ -123,10 +164,72 @@ async function enterRoom() {
 }
 
 function accept(joined) {
-  me = { roomId: joined.room.id, memberId: joined.memberId, memberKey: joined.memberKey };
-  myName = joined.name;
-  rememberMembership(room.code, me);
+  rememberMembership(room.code, { roomId: joined.room.id, memberId: joined.memberId, memberKey: joined.memberKey });
+  me = {
+    memberId: joined.memberId,
+    memberKey: joined.memberKey,
+    name: joined.name,
+    joinedAt: membershipFor(room.code).joinedAt,
+  };
   return true;
+}
+
+// ------------------------------------------------------------- host handover
+
+function watchHandover() {
+  stopWatching = watchForHostHandover(
+    () => ({ people, memberId: me.memberId, memberKey: me.memberKey }),
+    ({ hostKey: key }) => becomeHost(key),
+  );
+}
+
+/** This phone is now the host: heartbeat, show host tools, tell everyone. */
+function becomeHost(key, { quiet = false } = {}) {
+  stopWatching();
+  hostKey = key;
+  rememberHostKey(room.code, key);
+  live.track({ is_host: true });
+  stopHeartbeat = startHeartbeat(room.id, key, loseHost);
+  document.body.classList.add('is-host');
+  $('host-banner').hidden = false;
+  if (!quiet) toast('👑 The host left — you’re the host now!');
+  renderPeople(people);
+  refreshQueue();
+}
+
+function loseHost() {
+  stopHeartbeat();
+  hostKey = null;
+  forgetHostKey(room.code);
+  live.track({ is_host: false });
+  document.body.classList.remove('is-host');
+  $('host-banner').hidden = true;
+  toast('You’re no longer the host.');
+  renderPeople(people);
+  watchHandover();
+}
+
+async function skipCurrent() {
+  if (!hostKey || !playingRowId) return;
+  try {
+    await advanceQueue(room.id, hostKey, playingRowId, 'skipped');
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+async function onKickClick(e) {
+  const btn = e.target.closest('.kick');
+  if (!btn || !hostKey) return;
+  if (!confirm(`Remove ${btn.dataset.name} from the party? Their waiting songs will be dropped.`)) return;
+  btn.disabled = true;
+  try {
+    await kickMember(room.id, hostKey, btn.dataset.id);
+    toast(`${btn.dataset.name} was removed.`);
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+  }
 }
 
 // ------------------------------------------------------------- request
@@ -135,7 +238,7 @@ async function request({ song, kind }) {
   try {
     if (kind === 'catalog') await requestSong(me.memberKey, song.id);
     else await requestYoutubeSong(me.memberKey, song);
-    toast(`🎶 “${song.title}” added for ${myName}!`);
+    toast(`🎶 “${song.title}” added for ${me.name}!`);
     refreshQueue();
   } catch (err) {
     handleError(err);
@@ -144,7 +247,7 @@ async function request({ song, kind }) {
 
 function renderNameChip() {
   $('name-chip').hidden = false;
-  $('name-chip').textContent = `👤 ${myName}`;
+  $('name-chip').textContent = `👤 ${me.name}`;
   $('name-chip').title = 'Change your name';
 }
 
@@ -159,7 +262,9 @@ async function refreshQueue() {
     return;
   }
 
+  playingRowId = playing?.id ?? null;
   $('now-card').hidden = !playing;
+  $('np-skip').hidden = !(playing && hostKey);
   if (playing) {
     $('now-title').textContent = playing.song.title;
     $('now-meta').textContent = [playing.song.artist, `sung by ${playing.guest_name}`].filter(Boolean).join(' · ');
@@ -205,29 +310,34 @@ function renderMyStatus(playing, upNext, mine) {
 
 // ------------------------------------------------------------- people
 
-async function refreshMembers() {
-  let members;
-  try {
-    members = await fetchMembers(room.id);
-  } catch (err) {
-    toast(err.message);
-    return;
-  }
-  // Not in the list any more → the host removed us.
-  if (!members.some((m) => m.id === me.memberId)) {
-    kicked();
-    return;
-  }
-  $('people-count').textContent = members.length;
-  $('people-list').innerHTML = members
-    .map(
-      (m) => `
-      <li class="${m.id === me.memberId ? 'mine' : ''}">
-        <span class="title">${escapeHtml(m.name)}</span>
-        <span class="artist">${m.is_host ? '🎛️ Host' : m.id === me.memberId ? 'You' : 'Guest'}</span>
-      </li>`,
-    )
+/** Who's connected right now (Realtime Presence). Host sees Remove buttons. */
+function renderPeople(list) {
+  people = list;
+  $('people-count').textContent = list.length;
+  $('people-list').innerHTML = list
+    .map((p) => {
+      const isMe = p.member_id === me.memberId;
+      const role = p.is_host ? '👑 Host' : isMe ? 'You' : 'Guest';
+      return `
+      <li class="${isMe ? 'mine' : ''}">
+        <div class="person-info">
+          <span class="title">${escapeHtml(p.name)}</span>
+          <span class="artist">${isMe && p.is_host ? '👑 Host (you)' : role}</span>
+        </div>
+        ${hostKey && !isMe ? `<button type="button" class="secondary small kick" data-id="${p.member_id}" data-name="${escapeHtml(p.name)}">Remove</button>` : ''}
+      </li>`;
+    })
     .join('');
+}
+
+/** Members table changed (kick or host change) — check where we stand. */
+async function checkMyStatus() {
+  try {
+    const status = await fetchMemberStatus(me.memberId);
+    if (status.kicked) kicked();
+  } catch {
+    /* transient — next change will re-check */
+  }
 }
 
 // ------------------------------------------------------------- ui bits
@@ -238,9 +348,13 @@ function handleError(err) {
 }
 
 function kicked() {
-  unsubscribe();
-  // Keep the (now refused) membership so reopening the link still says
-  // "removed" instead of quietly joining as someone new.
+  stopWatching();
+  stopHeartbeat();
+  live.unsubscribe();
+  forgetMembership(room.code);
+  // Remember on this device, so reopening the link doesn't quietly rejoin.
+  const banned = store.get(KICKED_KEY, []);
+  if (!banned.includes(room.id)) store.set(KICKED_KEY, [...banned, room.id].slice(-20));
   gate(`The host removed you from <b>${escapeHtml(room.name)}</b>.`);
   return false;
 }

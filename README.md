@@ -8,11 +8,16 @@ Split-screen karaoke for a house party:
 | `/host/?room=CODE`    | The TV         | YouTube player, room code + QR + "Copy join link", song search, collapsible "Up next" sidebar (button or **Q**), auto-advancing queue |
 | `/join/?room=CODE`    | Guests' phones | The join link / QR target. Search, request songs, see how many songs are ahead of you |
 
-No sign-in anywhere. Creating a room gives the host's device a secret host key, kept in its browser, so only that device can play, skip or remove people. Guests only need the code or link.
+No sign-in anywhere. Guests only need the code or link.
 
+- **Sessions:** joining a room lasts until you close the app or tab. A reload keeps you in. Reopening the app later makes you a new person.
+- **One host:** the database allows only one host per room. The host's screen checks in every 10 seconds.
+  - If the host leaves (gone ~45s), the longest-present person still in the room becomes host automatically. They get Skip, Remove and an **Open TV player here** button.
+  - If everyone leaves, the room closes after 2 minutes and is deleted. There's no "resume hosting".
 - **Names:** each person picks a name once, on the landing page or in a one-time welcome box when they open a join link. Leave it blank and you get a singer pun like "Celine Dijon". After that, requests go straight through with no prompt.
 - **Rooms:** an optional room name (default "<host>'s Room") and an optional password. Without a password, the room is open to anyone with the code.
-- **People:** guests see who has joined in a People tab. On the TV, the host can **Remove** anyone. Their waiting songs are dropped and that device can't rejoin or request.
+- **People:** a live list of who's connected right now (Supabase Realtime Presence). The host can **Remove** anyone. Their waiting songs are dropped and that device can't rejoin.
+- **Size:** up to 150 people per room. On Supabase's free plan, the real ceiling is about **200 open connections across all rooms at once**; every open phone or TV is one.
 - **Search:** both screens have a **Prioritize karaoke versions** switch. It ranks karaoke/lyric versions first and adds "karaoke" to YouTube searches.
 
 Built to run entirely on free tiers: **Cloudflare Pages** (static site + one Pages Function) and **Supabase** (Postgres + Realtime). There's no server to keep running.

@@ -62,8 +62,28 @@ body.guest { min-height: 100vh; }
 }
 
 .people-list { counter-reset: none; }
-.people-list li { padding-left: 12px; }
+.people-list li { padding-left: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .people-list li::before { content: none; }
+.person-info { min-width: 0; }
+.people-list .kick { flex: none; }
+
+.host-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  background: rgb(255 181 71 / 0.12);
+  border: 1px solid var(--warn);
+  font-weight: 600;
+}
+.host-banner[hidden] { display: none; }
+.btn.small { padding: 0.35em 0.9em; font-size: 0.85rem; }
+.np-skip { align-self: flex-start; margin-top: 6px; background: rgb(255 255 255 / 0.2); color: #fff; }
+.np-skip[hidden] { display: none; }
 
 .tabs {
   position: sticky;

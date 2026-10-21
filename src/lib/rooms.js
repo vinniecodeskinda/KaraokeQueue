@@ -1,7 +1,19 @@
 // Room helpers shared by the entry, host and join pages.
-import { store } from './store.js';
+//
+// A room session lives in sessionStorage (see store.js): it survives a
+// reload, but closing the tab/app ends it. Reopening the app means joining
+// as a new person, and there is no "resume hosting" — if the host leaves,
+// host passes to someone still in the room.
+import { session } from './store.js';
 
-const HOSTING_KEY = 'karaoke.hosting';   // { [code]: { id, hostKey, createdAt } }
+const SESSION_KEY = 'karaoke.session';   // { [code]: { roomId, memberId, memberKey, joinedAt, hostKey? } }
+
+// Clean up pre-session versions that kept these in localStorage forever.
+try {
+  ['karaoke.hosting', 'karaoke.memberships', 'karaoke.requests'].forEach((k) => localStorage.removeItem(k));
+} catch {
+  /* ignore */
+}
 
 export const normalizeCode = (code) => String(code ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
@@ -12,49 +24,40 @@ export const hostUrl = (code) => `/host/?room=${encodeURIComponent(code)}`;
 /** Room code from ?room=… on the current page. */
 export const roomFromUrl = () => normalizeCode(new URLSearchParams(location.search).get('room'));
 
-/** Remember that this device hosts `room` (the host key never leaves it). */
-export function rememberHosting(room) {
-  const all = store.get(HOSTING_KEY, {});
-  all[room.code] = { id: room.id, hostKey: room.hostKey, createdAt: Date.now() };
-  // Keep the 5 most recent rooms only.
-  const recent = Object.entries(all)
-    .sort((a, b) => b[1].createdAt - a[1].createdAt)
-    .slice(0, 5);
-  store.set(HOSTING_KEY, Object.fromEntries(recent));
-}
+const all = () => session.get(SESSION_KEY, {});
+const update = (code, patch) => {
+  const sessions = all();
+  sessions[code] = { ...sessions[code], ...patch };
+  session.set(SESSION_KEY, sessions);
+};
 
-// Rooms this device has joined: { [code]: { roomId, memberId, memberKey } }.
-// The member key is what lets this device request songs (and get kicked).
-const MEMBERSHIPS_KEY = 'karaoke.memberships';
-
-export function membershipFor(code) {
-  return store.get(MEMBERSHIPS_KEY, {})[code] ?? null;
-}
+/** This tab's membership in `code`: { roomId, memberId, memberKey, joinedAt, hostKey? } or null. */
+export const membershipFor = (code) => all()[code] ?? null;
 
 export function rememberMembership(code, { roomId, memberId, memberKey }) {
-  const all = store.get(MEMBERSHIPS_KEY, {});
-  all[code] = { roomId, memberId, memberKey, at: Date.now() };
-  // Keep the 20 most recent rooms only.
-  const recent = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, 20);
-  store.set(MEMBERSHIPS_KEY, Object.fromEntries(recent));
+  const existing = membershipFor(code);
+  update(code, {
+    roomId,
+    memberId,
+    memberKey,
+    joinedAt: existing?.memberId === memberId ? existing.joinedAt : new Date().toISOString(),
+  });
 }
 
 export function forgetMembership(code) {
-  const all = store.get(MEMBERSHIPS_KEY, {});
-  delete all[code];
-  store.set(MEMBERSHIPS_KEY, all);
+  const sessions = all();
+  delete sessions[code];
+  session.set(SESSION_KEY, sessions);
 }
 
-/** { id, hostKey } if this device hosts `code`, else null. */
+/** Remember the host key for `code` in this tab (on create, or after taking over). */
+export const rememberHostKey = (code, hostKey) => update(code, { hostKey });
+export const forgetHostKey = (code) => update(code, { hostKey: null });
+
+/** { id, hostKey } if this tab is the host of `code`, else null. */
 export function hostingFor(code) {
-  return store.get(HOSTING_KEY, {})[code] ?? null;
-}
-
-/** Rooms this device has hosted, newest first: [{ code, id, hostKey, createdAt }]. */
-export function hostedRooms() {
-  return Object.entries(store.get(HOSTING_KEY, {}))
-    .map(([code, v]) => ({ code, ...v }))
-    .sort((a, b) => b.createdAt - a.createdAt);
+  const s = membershipFor(code);
+  return s?.hostKey ? { id: s.roomId, hostKey: s.hostKey } : null;
 }
 
 /** Copy (or natively share on phones) a room's join link. */

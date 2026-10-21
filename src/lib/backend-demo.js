@@ -82,6 +82,7 @@ export async function createRoom({ name, password, hostName }) {
     name: (name?.trim() || `${(hostName?.trim() || 'Karaoke').slice(0, 40)}'s Room`).slice(0, 60),
     password: password || null,
     hostKey: newKey(),
+    hostSeen: Date.now(),
   };
   save(KEYS.rooms, [...rooms, room], false);
   const host = addMember(room.id, hostName, true);
@@ -91,10 +92,47 @@ export async function createRoom({ name, password, hostName }) {
   };
 }
 
+const HOST_STALE_MS = 45_000;
+const ROOM_CLOSED_MS = 120_000;
+const isOpen = (room) => Date.now() - (room.hostSeen ?? 0) < ROOM_CLOSED_MS;
+
 export async function findRoom(code) {
   await tick();
   const room = load(KEYS.rooms).find((r) => r.code === code.trim().toUpperCase());
-  return room ? { id: room.id, code: room.code, name: room.name, hasPassword: Boolean(room.password) } : null;
+  return room
+    ? { id: room.id, code: room.code, name: room.name, hasPassword: Boolean(room.password), open: isOpen(room) }
+    : null;
+}
+
+export async function hostHeartbeat(roomId, hostKey) {
+  const rooms = load(KEYS.rooms);
+  const room = rooms.find((r) => r.id === roomId && r.hostKey === hostKey);
+  if (!room) throw new Error('You are no longer the host of this room');
+  room.hostSeen = Date.now();
+  save(KEYS.rooms, rooms, false);
+}
+
+export async function claimHost(memberKey) {
+  await tick();
+  const me = memberByKey(memberKey);
+  if (!me || me.kicked) throw new Error('You are not in this room');
+  const rooms = load(KEYS.rooms);
+  const room = rooms.find((r) => r.id === me.room_id);
+  if (!room || Date.now() - (room.hostSeen ?? 0) < HOST_STALE_MS) throw new Error('The host is still here');
+  room.hostKey = newKey();
+  room.hostSeen = Date.now();
+  save(KEYS.rooms, rooms, false);
+  const members = load(KEYS.members);
+  members.forEach((m) => {
+    if (m.room_id === room.id) m.is_host = m.id === me.id;
+  });
+  save(KEYS.members, members);
+  return { roomId: room.id, hostKey: room.hostKey };
+}
+
+export async function fetchMemberStatus(memberId) {
+  const m = load(KEYS.members).find((x) => x.id === memberId);
+  return m ? { kicked: m.kicked, isHost: m.is_host } : { kicked: true, isHost: false };
 }
 
 export async function joinRoom(code, { password, name, memberKey, hostKey } = {}) {
@@ -107,7 +145,12 @@ export async function joinRoom(code, { password, name, memberKey, hostKey } = {}
     if (existing.kicked) throw new Error('You were removed from this party by the host.');
     return { room: info, memberId: existing.id, memberKey, name: existing.name, isHost: existing.is_host };
   }
+  if (!isOpen(room)) throw new Error('This room has closed — everyone left.');
   const isHost = Boolean(hostKey) && hostKey === room.hostKey;
+  if (isHost) {
+    const host = load(KEYS.members).find((m) => m.room_id === room.id && m.is_host && !m.kicked);
+    if (host) return { room: info, memberId: host.id, memberKey: host.key, name: host.name, isHost: true };
+  }
   if (room.password && !isHost) {
     if (!password) throw new Error('This room needs a password');
     if (password !== room.password) throw new Error('Wrong password');
@@ -226,10 +269,39 @@ export async function searchYoutube() {
   return { available: false, items: [] };
 }
 
-export function subscribeToRoom(roomId, { onQueue = () => {}, onMembers = () => {} }, onStatus = () => {}) {
+// Presence, demo-style: each open tab writes a "last seen" entry every few
+// seconds; entries older than 12s (or removed on page close) drop out.
+const PRESENCE_KEY = 'karaoke.demo.presence';
+const PRESENCE_TTL_MS = 12_000;
+
+export function subscribeToRoom(
+  roomId,
+  { onQueue = () => {}, onMembers = () => {}, onPresence = () => {} },
+  onStatus = () => {},
+  me = null,
+) {
   const timers = {};
+  let payload = me?.payload ?? null;
+
+  const readPresence = () => {
+    const all = load(PRESENCE_KEY);
+    const now = Date.now();
+    return all
+      .filter((p) => p.room_id === roomId && now - p.seen < PRESENCE_TTL_MS)
+      .map((p) => p.payload)
+      .sort((a, b) => b.is_host - a.is_host || String(a.joined_at).localeCompare(String(b.joined_at)));
+  };
+  const writePresence = (remove = false) => {
+    if (!me) return;
+    const rest = load(PRESENCE_KEY).filter(
+      (p) => !(p.room_id === roomId && p.key === me.key) && Date.now() - p.seen < PRESENCE_TTL_MS,
+    );
+    save(PRESENCE_KEY, remove ? rest : [...rest, { room_id: roomId, key: me.key, payload, seen: Date.now() }]);
+  };
+
   const fire = (key) => {
-    const fn = key === KEYS.members ? onMembers : key === KEYS.queue ? onQueue : null;
+    const fn =
+      key === KEYS.members ? onMembers : key === KEYS.queue ? onQueue : key === PRESENCE_KEY ? () => onPresence(readPresence()) : null;
     if (!fn) return;
     clearTimeout(timers[key]);
     timers[key] = setTimeout(fn, 50);
@@ -237,9 +309,30 @@ export function subscribeToRoom(roomId, { onQueue = () => {}, onMembers = () => 
   const onMessage = (e) => fire(e.data);
   channel?.addEventListener('message', onMessage);
   localListeners.add(fire);
-  setTimeout(() => onStatus('SUBSCRIBED'), 0);
-  return () => {
-    channel?.removeEventListener('message', onMessage);
-    localListeners.delete(fire);
+
+  writePresence();
+  const beat = setInterval(() => {
+    writePresence();
+    onPresence(readPresence());   // also expires tabs that closed without saying bye
+  }, 4000);
+  const bye = () => writePresence(true);
+  addEventListener('pagehide', bye);
+  setTimeout(() => {
+    onStatus('SUBSCRIBED');
+    onPresence(readPresence());
+  }, 0);
+
+  return {
+    unsubscribe: () => {
+      clearInterval(beat);
+      removeEventListener('pagehide', bye);
+      bye();
+      channel?.removeEventListener('message', onMessage);
+      localListeners.delete(fire);
+    },
+    track: async (next) => {
+      payload = { ...payload, ...next };
+      writePresence();
+    },
   };
 }

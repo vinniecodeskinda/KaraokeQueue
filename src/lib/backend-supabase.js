@@ -32,11 +32,37 @@ export async function createRoom({ name, password, hostName }) {
   };
 }
 
-/** Public room info by code: { id, code, name, hasPassword } or null. */
+/** Public room info by code: { id, code, name, hasPassword, open } or null. */
 export async function findRoom(code) {
   const { data, error } = await supabase.rpc('get_room', { p_code: code });
   if (error) throw friendly(error);
-  return data ? { id: data.id, code: data.code, name: data.name, hasPassword: data.has_password } : null;
+  return data
+    ? { id: data.id, code: data.code, name: data.name, hasPassword: data.has_password, open: data.open }
+    : null;
+}
+
+/** Host's screen checks in; throws once host has passed to someone else. */
+export async function hostHeartbeat(roomId, hostKey) {
+  const { error } = await supabase.rpc('host_heartbeat', { p_room_id: roomId, p_host_key: hostKey });
+  if (error) throw friendly(error);
+}
+
+/** Take over as host (only works after the host has been gone ~45s). */
+export async function claimHost(memberKey) {
+  const { data, error } = await supabase.rpc('claim_host', { p_member_key: memberKey });
+  if (error) throw friendly(error);
+  return { roomId: data.room_id, hostKey: data.host_key };
+}
+
+/** This member's current standing: { kicked, isHost }. */
+export async function fetchMemberStatus(memberId) {
+  const { data, error } = await supabase
+    .from('members')
+    .select('kicked, is_host')
+    .eq('id', memberId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? { kicked: data.kicked, isHost: data.is_host } : { kicked: true, isHost: false };
 }
 
 /**
@@ -181,12 +207,22 @@ export async function searchYoutube(term, { karaoke = true } = {}) {
 }
 
 /**
- * Subscribe to one room's queue and member changes. Callbacks are debounced
- * and callers simply re-fetch — the data is tiny, and this avoids subtle
- * bugs from patching local state with partial Realtime payloads.
- * Returns an unsubscribe function.
+ * Join one room's live channel:
+ *  - queue / members table changes → onQueue / onMembers (debounced; callers
+ *    simply re-fetch — the data is tiny, and this avoids subtle bugs from
+ *    patching local state with partial Realtime payloads)
+ *  - Realtime Presence → onPresence(people): who is connected *right now*.
+ *    Closing the app drops you from it within seconds; nothing is written
+ *    to the database for joins/leaves.
+ * `me` = { key: memberId, payload: { member_id, name, is_host, joined_at } }.
+ * Returns { unsubscribe, track(payload) } — track() updates what others see.
  */
-export function subscribeToRoom(roomId, { onQueue = () => {}, onMembers = () => {} }, onStatus = () => {}) {
+export function subscribeToRoom(
+  roomId,
+  { onQueue = () => {}, onMembers = () => {}, onPresence = () => {} },
+  onStatus = () => {},
+  me = null,
+) {
   const debounce = (fn, ms = 120) => {
     let t;
     return () => {
@@ -197,19 +233,40 @@ export function subscribeToRoom(roomId, { onQueue = () => {}, onMembers = () => 
   const queueChanged = debounce(onQueue);
   const membersChanged = debounce(onMembers);
   const filter = `room_id=eq.${roomId}`;
-  const channel = supabase
-    .channel(`room-${roomId}`)
+  let payload = me?.payload ?? null;
+
+  const channel = supabase.channel(`room-${roomId}`, {
+    config: { presence: { key: me?.key ?? '' } },
+  });
+  channel
     .on('postgres_changes', { event: '*', schema: 'public', table: 'queue', filter }, queueChanged)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'members', filter }, membersChanged)
-    .subscribe((status) => {
+    .on('presence', { event: 'sync' }, () => onPresence(presenceList(channel.presenceState())))
+    .subscribe(async (status) => {
       onStatus(status);
-      // After a dropped connection comes back, resync anything we missed.
       if (status === 'SUBSCRIBED') {
+        if (payload) await channel.track(payload);
+        // After a dropped connection comes back, resync anything we missed.
         queueChanged();
         membersChanged();
       }
     });
-  return () => supabase.removeChannel(channel);
+
+  return {
+    unsubscribe: () => supabase.removeChannel(channel),
+    track: async (next) => {
+      payload = { ...payload, ...next };
+      await channel.track(payload);
+    },
+  };
+}
+
+/** Presence state → one entry per member, host first, then by join time. */
+function presenceList(state) {
+  return Object.values(state)
+    .map((metas) => metas[0])
+    .filter((p) => p?.member_id)
+    .sort((a, b) => b.is_host - a.is_host || String(a.joined_at).localeCompare(String(b.joined_at)));
 }
 
 function friendly(error) {

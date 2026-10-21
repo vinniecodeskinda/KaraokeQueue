@@ -1,7 +1,8 @@
 -- =====================================================================
--- Home Karaoke — Supabase schema (v3: rooms, members, passwords, kick)
+-- Home Karaoke — Supabase schema (v4: rooms, members, passwords, kick,
+-- one host with automatic handover, rooms close when everyone leaves)
 -- Run this whole file in Supabase → SQL Editor → New query.
--- Idempotent: safe to re-run, and upgrades a v1/v2 database in place.
+-- Idempotent: safe to re-run, and upgrades a v1–v3 database in place.
 -- =====================================================================
 
 create extension if not exists pg_trgm;                        -- fast ILIKE search
@@ -24,6 +25,10 @@ update public.rooms set name = 'Karaoke Room' where name is null;
 alter table public.rooms alter column name set default 'Karaoke Room';
 alter table public.rooms alter column name set not null;
 alter table public.rooms add column if not exists password_hash text;
+-- v4: the host's screen checks in every ~10s. If it goes quiet for 45s,
+-- another member may claim host; after 2 minutes with no host the room
+-- counts as closed, and closed rooms are deleted.
+alter table public.rooms add column if not exists host_seen_at timestamptz not null default now();
 
 -- ---------------------------------------------------------------------
 -- songs: the shared catalog
@@ -55,6 +60,15 @@ create table if not exists public.members (
   joined_at timestamptz not null default now()
 );
 create index if not exists members_room_idx on public.members (room_id);
+
+-- Exactly one host per room. (v3 data could have extras — keep the oldest.)
+update public.members m set is_host = false
+ where m.is_host
+   and m.id <> (select h.id from public.members h
+                 where h.room_id = m.room_id and h.is_host
+                 order by h.joined_at, h.id limit 1);
+create unique index if not exists members_one_host_per_room
+  on public.members (room_id) where is_host;
 
 create table if not exists public.member_keys (
   member_id uuid primary key references public.members(id) on delete cascade,
@@ -182,7 +196,10 @@ declare
   v_name text;
   v_key  text := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
 begin
-  if (select count(*) from members where room_id = p_room_id) >= 150 then
+  -- Abuse guard. (The practical ceiling is Realtime's free-tier limit of
+  -- ~200 simultaneous connections across all rooms.)
+  if (select count(*) from members
+       where room_id = p_room_id and joined_at > now() - interval '12 hours') >= 150 then
     raise exception 'This room is full.';
   end if;
   v_name := unique_member_name(p_room_id, p_name);
@@ -206,6 +223,8 @@ declare
   v_name   text;
   v_member json;
 begin
+  -- Rooms everyone has left are gone for good (frees their codes too).
+  delete from rooms r where r.host_seen_at < now() - interval '10 minutes';
   if (select count(*) from rooms r where r.created_at > now() - interval '1 hour') >= 300 then
     raise exception 'Too many rooms created recently. Try again in a bit.';
   end if;
@@ -242,7 +261,8 @@ end $$;
 create or replace function public.get_room(p_code text)
 returns json language sql stable security definer set search_path = public as $$
   select json_build_object('id', r.id, 'code', r.code, 'name', r.name,
-                           'has_password', r.password_hash is not null)
+                           'has_password', r.password_hash is not null,
+                           'open', r.host_seen_at > now() - interval '2 minutes')
     from rooms r where r.code = upper(btrim(p_code));
 $$;
 
@@ -268,6 +288,9 @@ begin
   select * into r from rooms where code = upper(btrim(p_code));
   if not found then
     raise exception 'Room not found';
+  end if;
+  if r.host_seen_at < now() - interval '2 minutes' then
+    raise exception 'This room has closed — everyone left.';
   end if;
 
   if p_member_key is not null then
@@ -355,6 +378,48 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- RPC: the host's screen checks in (~every 10s) to keep the room open and
+-- keep host. Fails once host has passed to someone else.
+-- ---------------------------------------------------------------------
+create or replace function public.host_heartbeat(p_room_id uuid, p_host_key text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update rooms set host_seen_at = now(), last_active_at = now()
+   where id = p_room_id and host_key = p_host_key;
+  if not found then
+    raise exception 'You are no longer the host of this room';
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- RPC: a member takes over as host after the host has been gone 45s.
+-- Atomic: exactly one claimer wins. Issues a fresh host key, so the old
+-- host's screen can no longer control the room.
+-- ---------------------------------------------------------------------
+create or replace function public.claim_host(p_member_key text)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_mem  members%rowtype;
+  v_room uuid;
+  v_key  text := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+begin
+  select m.* into v_mem from member_keys k join members m on m.id = k.member_id
+   where k.key = p_member_key and not m.kicked;
+  if not found then
+    raise exception 'You are not in this room';
+  end if;
+  update rooms set host_key = v_key, host_seen_at = now(), last_active_at = now()
+   where id = v_mem.room_id and host_seen_at < now() - interval '45 seconds'
+  returning id into v_room;
+  if v_room is null then
+    raise exception 'The host is still here';
+  end if;
+  update members set is_host = false where room_id = v_room and is_host;
+  update members set is_host = true where id = v_mem.id;
+  return json_build_object('room_id', v_room, 'host_key', v_key);
+end $$;
+
+-- ---------------------------------------------------------------------
 -- RPC: request a catalog song (any non-kicked member, incl. the host).
 -- ---------------------------------------------------------------------
 create or replace function public.request_song(p_member_key text, p_song_id uuid)
@@ -432,7 +497,7 @@ begin
     raise exception 'invalid outcome %', p_outcome;
   end if;
 
-  update rooms set last_active_at = now() where id = p_room_id;
+  update rooms set last_active_at = now(), host_seen_at = now() where id = p_room_id;
 
   if p_finished_id is not null then
     update queue set status = p_outcome, finished_at = now()
@@ -459,14 +524,15 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
--- Housekeeping: drop rooms idle for 2+ days (members + queue cascade).
--- Run manually, or schedule with pg_cron:
---   select cron.schedule('purge-karaoke', '0 6 * * *', 'select public.purge_old_queue()');
+-- Housekeeping: drop rooms everyone has left (members + queue cascade).
+-- create_room() already does this on every new room; this is for manual
+-- runs or pg_cron:
+--   select cron.schedule('purge-karaoke', '*/30 * * * *', 'select public.purge_old_queue()');
 -- ---------------------------------------------------------------------
 create or replace function public.purge_old_queue()
 returns integer language sql security definer set search_path = public as $$
   with gone as (
-    delete from rooms where last_active_at < now() - interval '2 days' returning 1
+    delete from rooms where host_seen_at < now() - interval '10 minutes' returning 1
   ) select count(*)::int from gone;
 $$;
 
@@ -479,6 +545,8 @@ grant  execute on function public.get_room(text)                            to a
 grant  execute on function public.join_room(text, text, text, text, text)   to anon, authenticated;
 grant  execute on function public.rename_member(text, text)                 to anon, authenticated;
 grant  execute on function public.kick_member(uuid, text, uuid)             to anon, authenticated;
+grant  execute on function public.host_heartbeat(uuid, text)                to anon, authenticated;
+grant  execute on function public.claim_host(text)                          to anon, authenticated;
 grant  execute on function public.request_song(text, uuid)                  to anon, authenticated;
 grant  execute on function public.request_youtube_song(text, text, text, text) to anon, authenticated;
 grant  execute on function public.advance_queue(uuid, text, uuid, text)     to anon, authenticated;

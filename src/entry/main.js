@@ -3,15 +3,13 @@ import '../styles/entry.css';
 import { showDemoBanner } from '../lib/supabase.js';
 import { createRoom, findRoom, isDemo, joinRoom } from '../lib/queue-api.js';
 import {
-  hostedRooms,
   hostUrl,
   membershipFor,
   normalizeCode,
-  rememberHosting,
+  rememberHostKey,
   rememberMembership,
   roomFromUrl,
 } from '../lib/rooms.js';
-import { escapeHtml } from '../lib/dom.js';
 import { hasName, currentName, saveName, sillyName } from '../lib/name-dialog.js';
 
 const $ = (id) => document.getElementById(id);
@@ -69,6 +67,10 @@ $('join-form').addEventListener('submit', async (e) => {
       toast(`No room called ${code}. Check the code on the TV.`);
       return;
     }
+    if (!room.open) {
+      toast(`“${room.name}” has closed — everyone left.`);
+      return;
+    }
     const existing = membershipFor(room.code);
     const password = $('join-pw').value;
     // Locked room and no password typed yet (and not already a member): ask.
@@ -105,8 +107,8 @@ $('host-btn').addEventListener('click', async () => {
       password: $('room-pw').value,
       hostName,
     });
-    rememberHosting(room);
     rememberMembership(room.code, { roomId: room.id, memberId: room.memberId, memberKey: room.memberKey });
+    rememberHostKey(room.code, room.hostKey);
     location.href = hostUrl(room.code);
   } catch (err) {
     toast(err.message);
@@ -114,21 +116,6 @@ $('host-btn').addEventListener('click', async () => {
     btn.textContent = 'Create a room';
   }
 });
-
-// Rooms this device created recently — one tap to get back to the TV view.
-const recent = hostedRooms().filter((r) => Date.now() - r.createdAt < 2 * 24 * 3600 * 1000);
-if (recent.length) {
-  const box = $('recent-rooms');
-  box.hidden = false;
-  box.innerHTML =
-    '<p class="hint">Resume hosting:</p>' +
-    recent
-      .map((r) => `<a class="chip-link resume-link" href="${hostUrl(r.code)}">${escapeHtml(r.code)}</a>`)
-      .join('');
-  box.addEventListener('click', (e) => {
-    if (e.target.closest('.resume-link')) commitName();
-  });
-}
 
 let toastTimer;
 function toast(msg) {

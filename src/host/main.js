@@ -3,7 +3,6 @@ import '../styles/base.css';
 import '../styles/host.css';
 import { showDemoBanner } from '../lib/supabase.js';
 import {
-  fetchMembers,
   findRoom,
   isDemo,
   joinRoom,
@@ -14,6 +13,7 @@ import {
   subscribeToRoom,
 } from '../lib/queue-api.js';
 import {
+  forgetHostKey,
   hostingFor,
   joinUrl,
   membershipFor,
@@ -21,6 +21,7 @@ import {
   roomFromUrl,
   shareJoinLink,
 } from '../lib/rooms.js';
+import { startHeartbeat } from '../lib/host-session.js';
 import { mountSongSearch } from '../lib/song-search.js';
 import { currentName, promptName, saveName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
@@ -32,9 +33,12 @@ const $ = (id) => document.getElementById(id);
 const COLLAPSED_KEY = 'karaoke.host.collapsed';
 
 let room;
-let hosting;
-let me;           // this device's membership: { roomId, memberId, memberKey }
+let hosting;      // { id, hostKey } — only in this tab's session
+let me;           // { memberId, memberKey, name, joinedAt }
+let live;         // { unsubscribe, track } for the room channel
 let controller;   // created on "Start the party"
+let player;
+let stopHeartbeat = () => {};
 
 if (isDemo) showDemoBanner();
 init();
@@ -52,32 +56,42 @@ async function init() {
     return gate(`Couldn't reach the server: ${escapeHtml(err.message)}`);
   }
   if (!room) {
-    return gate(`Room <b>${escapeHtml(code)}</b> doesn't exist (rooms expire after 2 idle days).`, true);
+    return gate(`Room <b>${escapeHtml(code)}</b> doesn't exist.`, true);
+  }
+  if (!room.open) {
+    return gate(`<b>${escapeHtml(room.name)}</b> has closed — everyone left.`, true);
   }
 
+  // Host powers live only in the tab that created (or took over) the room.
   hosting = hostingFor(room.code);
   if (!hosting || hosting.id !== room.id) {
     return gate(
-      `This device isn't the host of room <b>${escapeHtml(room.code)}</b>.<br />
+      `This screen isn't the host of <b>${escapeHtml(room.name)}</b>.<br />
        <a class="btn" href="/join/?room=${room.code}">Join as a guest</a>`,
       true,
     );
   }
 
-  // The host is a member too (that's who TV-added songs are credited to).
-  // Rooms made before members existed get a host membership on first visit.
   try {
+    const session = membershipFor(room.code);
     const joined = await joinRoom(room.code, {
       name: currentName(),
-      memberKey: membershipFor(room.code)?.memberKey,
+      memberKey: session?.memberKey,
       hostKey: hosting.hostKey,
     });
-    me = { roomId: joined.room.id, memberId: joined.memberId, memberKey: joined.memberKey };
-    rememberMembership(room.code, me);
-    renderHostName(joined.name);
+    rememberMembership(room.code, { roomId: joined.room.id, memberId: joined.memberId, memberKey: joined.memberKey });
+    me = {
+      memberId: joined.memberId,
+      memberKey: joined.memberKey,
+      name: joined.name,
+      joinedAt: membershipFor(room.code).joinedAt,
+    };
+    renderHostName(me.name);
   } catch (err) {
     return gate(`Couldn't open the room: ${escapeHtml(err.message)}`, true);
   }
+
+  stopHeartbeat = startHeartbeat(room.id, hosting.hostKey, lostHost);
 
   showRoom();
   wireCollapse();
@@ -85,7 +99,9 @@ async function init() {
   $('host-name-btn').addEventListener('click', async () => {
     const wanted = await promptName({ title: 'Change your name' });
     try {
-      renderHostName(saveName(await renameMember(me.memberKey, wanted)));
+      me.name = saveName(await renameMember(me.memberKey, wanted));
+      renderHostName(me.name);
+      live.track({ name: me.name });
     } catch (err) {
       toast(err.message);
     }
@@ -98,7 +114,7 @@ async function init() {
       try {
         if (kind === 'catalog') await requestSong(me.memberKey, song.id);
         else await requestYoutubeSong(me.memberKey, song);
-        toast(`🎶 “${song.title}” added for ${$('host-name').textContent}`);
+        toast(`🎶 “${song.title}” added for ${me.name}`);
       } catch (err) {
         toast(err.message);
       }
@@ -106,11 +122,14 @@ async function init() {
   });
 
   $('people').addEventListener('click', onKickClick);
-  refreshMembers();
-  subscribeToRoom(
+  live = subscribeToRoom(
     room.id,
-    { onQueue: () => controller?.refresh(), onMembers: refreshMembers },
+    { onQueue: () => controller?.refresh(), onPresence: renderPeople },
     (status) => ($('conn').dataset.status = status),
+    {
+      key: me.memberId,
+      payload: { member_id: me.memberId, name: me.name, is_host: true, joined_at: me.joinedAt },
+    },
   );
 
   $('start-btn').addEventListener('click', start, { once: true });
@@ -120,7 +139,7 @@ async function start() {
   $('start-btn').disabled = true;
   $('start-btn').textContent = 'Loading…';
 
-  const player = await createPlayer('player', {
+  player = await createPlayer('player', {
     onEnded: () => controller?.handleEnded(),
     onError: (code, reason) => controller?.handleError(code, reason),
   });
@@ -136,8 +155,26 @@ async function start() {
   // Skip is button-only: a single-letter hotkey on the TV is too easy to hit by accident.
   $('skip-btn').addEventListener('click', () => controller.skip());
 
-  $('start-overlay').remove();
+  $('start-overlay')?.remove();
   await controller.refresh();
+}
+
+/** Host passed to someone else (this screen was offline too long). */
+function lostHost() {
+  stopHeartbeat();
+  forgetHostKey(room.code);
+  try {
+    player?.stopVideo();
+  } catch {
+    /* player not ready */
+  }
+  live?.unsubscribe();
+  gate(
+    `You're no longer the host of <b>${escapeHtml(room.name)}</b> — this screen was away too long,
+     so someone else in the room took over.<br />
+     <a class="btn" href="/join/?room=${room.code}">Rejoin as a guest</a>`,
+    true,
+  );
 }
 
 function render({ playing, upNext }) {
@@ -165,23 +202,18 @@ function render({ playing, upNext }) {
 
 // ------------------------------------------------------------- people
 
-async function refreshMembers() {
-  let members;
-  try {
-    members = await fetchMembers(room.id);
-  } catch (err) {
-    toast(err.message);
-    return;
-  }
-  $('people-count').textContent = members.length;
-  $('people').innerHTML = members
-    .map(
-      (m) => `
+/** Who's connected right now (Realtime Presence). */
+function renderPeople(people) {
+  $('people-count').textContent = people.length;
+  $('people').innerHTML = people
+    .map((p) => {
+      const isMe = p.member_id === me.memberId;
+      return `
       <li>
-        <span class="person">${escapeHtml(m.name)}${m.is_host ? ' <span class="badge-host">host</span>' : ''}</span>
-        ${m.is_host ? '' : `<button type="button" class="secondary small kick" data-id="${m.id}" data-name="${escapeHtml(m.name)}">Remove</button>`}
-      </li>`,
-    )
+        <span class="person">${escapeHtml(p.name)}${p.is_host ? ' <span class="badge-host">host</span>' : ''}${isMe ? ' <span class="you">(you)</span>' : ''}</span>
+        ${isMe ? '' : `<button type="button" class="secondary small kick" data-id="${p.member_id}" data-name="${escapeHtml(p.name)}">Remove</button>`}
+      </li>`;
+    })
     .join('');
 }
 
@@ -238,7 +270,7 @@ function wireCollapse() {
 }
 
 function gate(html, withHome = false) {
-  $('start-overlay').remove();
+  $('start-overlay')?.remove();
   $('gate').hidden = false;
   $('gate').innerHTML = `
     <div class="gate-card">
