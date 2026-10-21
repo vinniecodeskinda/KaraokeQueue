@@ -11,7 +11,7 @@ import {
 } from '../lib/queue-api.js';
 import { hostingFor, joinUrl, roomFromUrl, shareJoinLink } from '../lib/rooms.js';
 import { mountSongSearch } from '../lib/song-search.js';
-import { askName } from '../lib/name-dialog.js';
+import { currentName, promptName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
 import { createPlayer } from './youtube-player.js';
 import { QueueController } from './queue-controller.js';
@@ -51,12 +51,19 @@ async function init() {
 
   showRoom(room.code);
   wireCollapse();
+
+  // Songs added from the TV go in under the host's name (set on the landing page).
+  const renderHostName = () => ($('host-name').textContent = currentName());
+  renderHostName();
+  $('host-name-btn').addEventListener('click', async () => {
+    await promptName({ title: 'Change your name' });
+    renderHostName();
+  });
   mountSongSearch($('search'), {
     buttonLabel: 'Add',
     onError: toast,
     onRequest: async ({ kind, song }) => {
-      const name = await askName(song.title, { defaultName: 'Host' });
-      if (!name) return;
+      const name = currentName();
       try {
         if (kind === 'catalog') await requestSong(room.id, song.id, name);
         else await requestYoutubeSong(room.id, song, name);

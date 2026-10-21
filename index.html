@@ -14,6 +14,15 @@
         <p>Play on the TV. Pick songs from your phone. No sign-up.</p>
       </header>
 
+      <section class="entry-card name-card">
+        <label for="name-input"><h2>Your name</h2></label>
+        <div class="name-row">
+          <input id="name-input" maxlength="40" autocomplete="nickname" placeholder="Your name" />
+          <button type="button" class="secondary dice" id="dice-btn" title="Random silly name" aria-label="Random silly name">🎲</button>
+        </div>
+        <p class="hint">Shown next to the songs you pick. Leave it blank for a random silly name.</p>
+      </section>
+
       <section class="entry-card" aria-labelledby="join-title">
         <h2 id="join-title">Join a party</h2>
         <form id="join-form" class="code-form" autocomplete="off">

@@ -4,10 +4,23 @@ import { showDemoBanner } from '../lib/supabase.js';
 import { createRoom, findRoom, isDemo } from '../lib/queue-api.js';
 import { hostedRooms, hostUrl, normalizeCode, rememberHosting, roomFromUrl } from '../lib/rooms.js';
 import { escapeHtml } from '../lib/dom.js';
+import { hasName, currentName, saveName, sillyName } from '../lib/name-dialog.js';
 
 const $ = (id) => document.getElementById(id);
 
 if (isDemo) showDemoBanner();
+
+// Name: prefill a returning device's name; otherwise suggest a silly one as
+// the placeholder, which is what they get if they leave it blank.
+const nameInput = $('name-input');
+const suggested = sillyName();
+if (hasName()) nameInput.value = currentName();
+nameInput.placeholder = suggested;
+$('dice-btn').addEventListener('click', () => {
+  nameInput.value = sillyName();
+  nameInput.focus();
+});
+const commitName = () => saveName(nameInput.value.trim() || suggested);
 
 // Old-style links like /?room=ABCDE go straight to the join page.
 const linked = roomFromUrl();
@@ -36,6 +49,7 @@ $('join-form').addEventListener('submit', async (e) => {
       toast(`No room called ${code}. Check the code on the TV.`);
       return;
     }
+    commitName();
     location.href = `/join/?room=${room.code}`;
   } catch (err) {
     toast(err.message);
@@ -51,6 +65,7 @@ $('host-btn').addEventListener('click', async () => {
   try {
     const room = await createRoom();
     rememberHosting(room);
+    commitName();
     location.href = hostUrl(room.code);
   } catch (err) {
     toast(err.message);
@@ -67,8 +82,11 @@ if (recent.length) {
   box.innerHTML =
     '<p class="hint">Resume hosting:</p>' +
     recent
-      .map((r) => `<a class="chip-link" href="${hostUrl(r.code)}">${escapeHtml(r.code)}</a>`)
+      .map((r) => `<a class="chip-link resume-link" href="${hostUrl(r.code)}">${escapeHtml(r.code)}</a>`)
       .join('');
+  box.addEventListener('click', (e) => {
+    if (e.target.closest('.resume-link')) commitName();
+  });
 }
 
 let toastTimer;

@@ -106,6 +106,16 @@ body.host { overflow: hidden; height: 100vh; }
 }
 .host-search summary::-webkit-details-marker { display: none; }
 .host-search[open] summary { color: var(--muted); }
+.adding-as { margin: 0 14px 8px; font-size: 0.85rem; color: var(--muted); }
+.adding-as b { color: var(--text); }
+.link-btn {
+  background: none;
+  padding: 0 0.2em;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: inherit;
+  text-decoration: underline;
+}
 .host-search #search { padding: 0 14px 12px; max-height: 42vh; overflow-y: auto; }
 .host-search .result { background: var(--surface-2); }
 

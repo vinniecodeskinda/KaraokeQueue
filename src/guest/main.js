@@ -11,7 +11,7 @@ import {
 } from '../lib/queue-api.js';
 import { roomFromUrl, shareJoinLink } from '../lib/rooms.js';
 import { mountSongSearch } from '../lib/song-search.js';
-import { askName, savedName } from '../lib/name-dialog.js';
+import { currentName, hasName, promptName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
 import { escapeHtml } from '../lib/dom.js';
 
@@ -46,11 +46,22 @@ async function init() {
     if (how === 'copied') toast('Join link copied — send it to your friends!');
   });
 
-  renderNameChip();
   $('name-chip').addEventListener('click', async () => {
-    if (await askName(null)) renderNameChip();
+    await promptName({ title: 'Change your name' });
+    renderNameChip();
   });
   wireTabs();
+
+  // Came straight in via a QR code / join link (skipping the landing page):
+  // offer a name once. Closing it keeps the silly name it's pre-filled with.
+  if (!hasName()) {
+    await promptName({
+      title: `Welcome to room ${room.code}! 🎤`,
+      subtitle: 'What should we call you? This shows next to the songs you pick.',
+      confirmLabel: "Let's sing",
+    });
+  }
+  renderNameChip();
 
   mountSongSearch($('search'), { onRequest: request, onError: toast });
 
@@ -61,9 +72,7 @@ async function init() {
 // ------------------------------------------------------------- request
 
 async function request({ kind, song }) {
-  const name = await askName(song.title);
-  if (!name) return;
-  renderNameChip();
+  const name = currentName();
   try {
     const id =
       kind === 'catalog'
@@ -71,7 +80,7 @@ async function request({ kind, song }) {
         : await requestYoutubeSong(room.id, song, name);
     myRequestIds.add(id);
     store.set(REQUESTS_KEY, [...myRequestIds]);
-    toast(`🎶 “${song.title}” added to the queue!`);
+    toast(`🎶 “${song.title}” added for ${name}!`);
     refreshQueue();
   } catch (err) {
     toast(err.message);
@@ -79,9 +88,9 @@ async function request({ kind, song }) {
 }
 
 function renderNameChip() {
-  const name = savedName();
-  $('name-chip').hidden = !name;
-  $('name-chip').textContent = `👤 ${name}`;
+  $('name-chip').hidden = false;
+  $('name-chip').textContent = `👤 ${currentName()}`;
+  $('name-chip').title = 'Change your name';
 }
 
 // ------------------------------------------------------------- queue

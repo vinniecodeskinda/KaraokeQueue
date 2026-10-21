@@ -180,6 +180,23 @@ dialog input {
   background: var(--bg);
   color: var(--text);
 }
+/* Name input + 🎲 random-name button (landing page and name dialog) */
+.name-row { display: flex; gap: 8px; }
+.name-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 16px;
+  padding: 0.75em 1em;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+.name-row input:focus { border-color: var(--accent-2); }
+.name-row .dice { flex: none; padding: 0 0.8em; font-size: 1.2rem; border-radius: 12px; }
+
 .dialog-actions { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: 8px; margin-top: 16px; }
 
 /* ---------------------------------------------------------- gate (errors) */

@@ -48,6 +48,9 @@ body.entry {
 
 button.wide { width: 100%; padding: 0.8em; font-size: 1.05rem; }
 
+.name-card { margin-bottom: 14px; }
+.name-card label h2 { margin: 0 0 12px; }
+
 .or { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--muted); }
 .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
