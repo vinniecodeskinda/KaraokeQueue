@@ -1,14 +1,18 @@
-// Cloudflare Pages Function: GET /api/youtube-search?q=...
+// Cloudflare Pages Function: GET /api/youtube-search?q=...&karaoke=1
 //
-// Optional fallback search via YouTube Data API v3. The key never reaches
-// the browser. Quota note: search.list costs 100 units and the free daily
-// quota is 10,000 units (~100 searches/day), so responses are cached at the
-// edge for 24h and guests only hit this when they press "Search YouTube".
+// Song search via YouTube Data API v3. The key never reaches the browser.
 //
-// Configure: Cloudflare Pages → Settings → Environment variables →
+// Quota: search.list costs 100 units of the free 10,000/day (~100 searches/
+// day for everyone), so results are cached for 7 days in Workers KV
+// (binding SEARCH_CACHE, shared worldwide, expires on its own). YouTube's
+// Developer Policies allow storing API data for up to 30 days. If the KV
+// binding is missing, falls back to Cloudflare's per-location edge cache.
+//
+// Configure: Cloudflare Pages → Settings → Variables and Secrets →
 //   YOUTUBE_API_KEY (type: Secret). Locally: put it in .dev.vars.
+//   KV binding is declared in wrangler.toml.
 
-const CACHE_TTL_SECONDS = 60 * 60 * 24;
+const CACHE_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 export async function onRequestGet({ request, env, waitUntil }) {
   if (!env.YOUTUBE_API_KEY) {
@@ -22,13 +26,10 @@ export async function onRequestGet({ request, env, waitUntil }) {
   const karaoke = params.get('karaoke') !== '0';
   const query = karaoke && !/karaoke/i.test(q) ? `${q} karaoke` : q;
 
-  // Normalised cache key so "Queen", "queen " share one cached response.
-  const cacheKey = new Request(
-    `https://cache.internal/yt-search?q=${encodeURIComponent(query.toLowerCase())}`,
-  );
-  const cache = caches.default;
-  const cached = await cache.match(cacheKey);
-  if (cached) return cached;
+  // Normalised key so "Queen", " queen  " share one cached response.
+  const key = `yt-search:${query.toLowerCase().replace(/\s+/g, ' ')}`;
+  const cached = await cacheGet(env, key);
+  if (cached) return json(cached, 200, { 'X-Cache': 'HIT' });
 
   const api = new URL('https://www.googleapis.com/youtube/v3/search');
   api.search = new URLSearchParams({
@@ -43,8 +44,13 @@ export async function onRequestGet({ request, env, waitUntil }) {
 
   const res = await fetch(api);
   if (!res.ok) {
-    const status = res.status === 403 ? 503 : 502;   // 403 = quota exhausted / bad key
-    return json({ error: 'youtube_unavailable', items: [] }, status);
+    // 403 + quotaExceeded = today's searches are used up (resets at midnight PT).
+    const body = await res.json().catch(() => ({}));
+    const reason = body?.error?.errors?.[0]?.reason ?? '';
+    if (/quotaExceeded|dailyLimitExceeded|rateLimitExceeded/i.test(reason)) {
+      return json({ error: 'quota_exceeded', items: [] }, 429);
+    }
+    return json({ error: 'youtube_unavailable', items: [] }, 502);
   }
 
   const data = await res.json();
@@ -57,10 +63,27 @@ export async function onRequestGet({ request, env, waitUntil }) {
       thumbnail: it.snippet.thumbnails?.default?.url ?? null,
     }));
 
-  const response = json({ items }, 200, { 'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}` });
-  waitUntil(cache.put(cacheKey, response.clone()));
-  return response;
+  waitUntil(cachePut(env, key, { items }));
+  return json({ items }, 200, { 'X-Cache': 'MISS' });
 }
+
+async function cacheGet(env, key) {
+  if (env.SEARCH_CACHE) return env.SEARCH_CACHE.get(key, 'json');
+  const hit = await caches.default.match(edgeKey(key));
+  return hit ? hit.json() : null;
+}
+
+async function cachePut(env, key, value) {
+  if (env.SEARCH_CACHE) {
+    return env.SEARCH_CACHE.put(key, JSON.stringify(value), { expirationTtl: CACHE_TTL_SECONDS });
+  }
+  return caches.default.put(
+    edgeKey(key),
+    json(value, 200, { 'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}` }),
+  );
+}
+
+const edgeKey = (key) => new Request(`https://cache.internal/${encodeURIComponent(key)}`);
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {

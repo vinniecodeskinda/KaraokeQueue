@@ -201,6 +201,12 @@ export async function searchYoutube(term, { karaoke = true } = {}) {
   // In plain `vite dev` there is no Functions runtime: treat as not set up.
   const isJson = res.headers.get('content-type')?.includes('application/json');
   if (!isJson || res.status === 501 || res.status === 404) return { available: false, items: [] };
+  if (res.status === 429) {
+    throw new Error(
+      `Today’s YouTube searches are used up — they come back at ${quotaResetTime()}. ` +
+        'Songs already searched this week still work.',
+    );
+  }
   if (!res.ok) throw new Error('YouTube search is unavailable right now');
   const body = await res.json();
   return { available: true, items: body.items ?? [] };
@@ -271,6 +277,23 @@ function presenceList(state) {
     .map((metas) => metas[0])
     .filter((p) => p?.member_id)
     .sort((a, b) => b.is_host - a.is_host || String(a.joined_at).localeCompare(String(b.joined_at)));
+}
+
+/** YouTube quota resets at midnight Pacific — shown in the viewer's local time. */
+function quotaResetTime() {
+  const now = new Date();
+  const [h, m, s] = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hourCycle: 'h23',
+  })
+    .format(now)
+    .split(':')
+    .map(Number);
+  const reset = new Date(now.getTime() + ((24 - h) * 3600 - m * 60 - s) * 1000);
+  return reset.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function friendly(error) {

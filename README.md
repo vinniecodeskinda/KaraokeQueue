@@ -18,7 +18,7 @@ No sign-in anywhere. Guests only need the code or link.
 - **Rooms:** an optional room name (default "<host>'s Room") and an optional password. Without a password, the room is open to anyone with the code.
 - **People:** a live list of who's connected right now (Supabase Realtime Presence). The host can **Remove** anyone. Their waiting songs are dropped and that device can't rejoin.
 - **Size:** up to 150 people per room. On Supabase's free plan, the real ceiling is about **200 open connections across all rooms at once**; every open phone or TV is one.
-- **Search:** YouTube only, on both screens. It runs when you press Search or Enter. Each search uses YouTube API quota: about **100 searches/day** on the free tier, and repeated searches are cached for 24h.
+- **Search:** YouTube only, on both screens. It runs when you press Search or Enter. Each search uses YouTube API quota: about **100 searches/day** on the free tier, and repeated searches are cached for 7 days in Cloudflare Workers KV (binding `SEARCH_CACHE` in `wrangler.toml`). If searches run out, people see when they come back (midnight Pacific).
   - The **Prioritize karaoke versions** switch adds "karaoke" to the search and ranks karaoke/lyric versions first.
   - Songs people pick are still saved in the `songs` table, because the queue needs them, but there's no browsable catalog.
 - **Playback controls:** on the TV sidebar and in every phone's **Remote** tab: Start over, Pause/Play, Skip, speed (0.5×–1.5×, resets to 1× for each new song), Mute, and Volume −/+.
@@ -76,7 +76,7 @@ The YouTube fallback is a Pages Function, so plain `npm run dev` doesn't serve i
 4. Redeploy after changing variables (they're read at build time).
 
 ### 4. Optional: YouTube Data API v3 key
-Google Cloud Console → enable **YouTube Data API v3** → Credentials → API key. Restrict it to that API. The free quota is 10,000 units/day, and each search costs 100, so you get about 100 searches/day. Results are cached at the edge for 24h, and guests only search YouTube when they tap **Search YouTube instead**. Songs picked this way are added to the catalog, so the next guest finds them locally.
+Google Cloud Console → enable **YouTube Data API v3** → Credentials → API key. Restrict it to that API. The free quota is 10,000 units/day, and each search costs 100, so you get about 100 searches/day. Results are cached for 7 days in Workers KV, and searches only run when someone taps **Search**.
 
 ## Free-tier budget
 

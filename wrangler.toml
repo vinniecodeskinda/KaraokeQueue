@@ -1,0 +1,11 @@
+# Cloudflare Pages config (used by `wrangler pages deploy`).
+# Secrets such as YOUTUBE_API_KEY are NOT kept here — they're set with
+# `wrangler pages secret put` / the dashboard.
+name = "karaokequeue"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-09-23"
+
+# 7-day cache for YouTube search results (functions/api/youtube-search.js).
+[[kv_namespaces]]
+binding = "SEARCH_CACHE"
+id = "1604fff02f414876a0f5710ea8e9bf31"

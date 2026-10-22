@@ -25,7 +25,8 @@ export const isKaraokeVersion = (song) =>
  */
 export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Request' }) {
   let preferKaraoke = store.get(PREF_KEY, true);
-  let results = [];
+  let apiOrder = [];   // results as YouTube returned them
+  let results = [];    // what's on screen (maybe re-sorted)
   let lastTerm = '';
 
   root.classList.add('song-search');
@@ -55,7 +56,9 @@ export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Reque
   toggle.addEventListener('change', () => {
     preferKaraoke = toggle.checked;
     store.set(PREF_KEY, preferKaraoke);
-    if (lastTerm) run();   // re-query with/without "karaoke"
+    // Re-sort what's on screen instead of searching again (a search costs
+    // quota). The next search uses the new setting.
+    if (results.length) render();
   });
 
   list.addEventListener('click', async (e) => {
@@ -84,18 +87,24 @@ export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Reque
         list.innerHTML = '<li class="empty">YouTube search isn’t set up (needs YOUTUBE_API_KEY).</li>';
         return;
       }
-      results = preferKaraoke
-        ? [...items].sort((a, b) => isKaraokeVersion(b) - isKaraokeVersion(a))
-        : items;
-      list.innerHTML = results.length
-        ? results.map((v, i) => row(v, i)).join('')
-        : `<li class="empty">No results for “${escapeHtml(term)}”.</li>`;
+      apiOrder = items;
+      render();
     } catch (err) {
       list.innerHTML = '';
       onError(err.message);
     } finally {
       searchBtn.disabled = false;
     }
+  }
+
+  /** Show apiOrder, karaoke versions first when the switch is on. */
+  function render() {
+    results = preferKaraoke
+      ? [...apiOrder].sort((a, b) => isKaraokeVersion(b) - isKaraokeVersion(a))
+      : apiOrder;
+    list.innerHTML = results.length
+      ? results.map((v, i) => row(v, i)).join('')
+      : `<li class="empty">No results for “${escapeHtml(lastTerm)}”.</li>`;
   }
 
   function row(v, idx) {
