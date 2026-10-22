@@ -3,12 +3,25 @@
 body.host { overflow: hidden; height: 100vh; }
 
 .host #app {
-  display: grid;
-  grid-template-columns: 1fr minmax(320px, 27vw);
+  --sidebar-w: clamp(320px, 27vw, 560px);
+  display: flex;
   height: 100vh;
+  overflow: hidden;
 }
-.host #app.collapsed { grid-template-columns: 1fr; }
-.host #app.collapsed .sidebar { display: none; }
+.host .stage { flex: 1 1 auto; }
+/* Hiding/showing the queue slides: a negative right margin pushes the
+   sidebar off the right edge while the video grows into the space. (Margin
+   animates in every browser; grid columns don't everywhere.) */
+.host .sidebar {
+  flex: 0 0 var(--sidebar-w);
+  margin-right: 0;
+  transition: margin-right 0.45s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s;
+}
+.host #app.collapsed .sidebar {
+  margin-right: calc(-1 * var(--sidebar-w));
+  visibility: hidden;   /* not focusable once it's off-screen, after the slide */
+  transition: margin-right 0.45s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.45s;
+}
 
 .stage {
   position: relative;
@@ -113,8 +126,7 @@ body.host { overflow: hidden; height: 100vh; }
   white-space: nowrap;
 }
 
-/* ⛶ "fullscreen with reactions": the page goes fullscreen and the video
-   fills it (sidebar hidden), so overlays still show on top. */
+/* ⛶ fullscreens the whole page (like F11), so overlays still show on top. */
 .fs-btn {
   position: absolute;
   top: 12px;
@@ -130,9 +142,25 @@ body.host { overflow: hidden; height: 100vh; }
   transition: opacity 0.2s;
 }
 .fs-btn:hover, .fs-btn:focus-visible { opacity: 1; }
-.host #app.fs-mode { grid-template-columns: 1fr; }
-.host #app.fs-mode .sidebar,
-.host #app.fs-mode .show-sidebar { display: none; }
+
+/* "Click or press any key to go fullscreen" (a phone asked; the browser needs a local input) */
+.fs-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 8vh;
+  transform: translateX(-50%);
+  z-index: 110;
+  padding: 0.9em 1.6em;
+  border-radius: 999px;
+  background: rgb(15 11 30 / 0.92);
+  border: 1px solid var(--accent);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.5);
+  font-size: 2.4vh;
+  font-weight: 600;
+  animation: pill-in 0.3s ease-out both;
+}
+.fs-prompt[hidden] { display: none; }
+.fs-prompt p { margin: 0; }
 
 .now-playing {
   position: absolute;
@@ -157,6 +185,7 @@ body.host { overflow: hidden; height: 100vh; }
 .sidebar {
   display: flex;
   flex-direction: column;
+  width: var(--sidebar-w);
   background: var(--surface);
   border-left: 1px solid var(--border);
   min-height: 0;
@@ -327,6 +356,11 @@ body.host { overflow: hidden; height: 100vh; }
   letter-spacing: 0.04em;
 }
 .show-sidebar[hidden] { display: none; }
+.show-sidebar:not([hidden]) { animation: pill-in 0.3s ease-out 0.3s both; }
+@keyframes pill-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
 
 .start-overlay {
   position: fixed;
@@ -352,9 +386,10 @@ body.host { overflow: hidden; height: 100vh; }
 /* Portrait screens / small windows: stack the sidebar under the player. */
 @media (max-width: 900px) {
   body.host { overflow: auto; height: auto; }
-  .host #app { grid-template-columns: 1fr; grid-template-rows: 56vw auto; height: auto; }
+  .host #app { display: grid; grid-template-columns: 1fr; grid-template-rows: 56vw auto; height: auto; overflow: visible; }
   .host #app.collapsed { grid-template-rows: 56vw; }
-  .sidebar { border-left: 0; border-top: 1px solid var(--border); }
+  .host #app.collapsed .sidebar { display: none; }
+  .host .sidebar { width: auto; margin-right: 0; transition: none; border-left: 0; border-top: 1px solid var(--border); }
   /* The waiting screen is sized for a TV; scale it to the narrow player. */
   .stage { overflow: hidden; }
   .idle h1 { font-size: 5.5vw; margin-bottom: 0.2em; }

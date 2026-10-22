@@ -132,8 +132,6 @@ body.guest.demo, body.entry.demo { padding-top: 34px; }
 .results { list-style: none; margin: 10px 0 0; padding: 0; }
 .results-source { margin: 10px 2px 0; font-size: 0.8rem; color: var(--muted); }
 .results-source[hidden] { display: none; }
-.search-mode .switch-label { font-size: 0.88rem; }
-.mode-detail { color: var(--muted); font-size: 0.85em; }
 .result {
   display: flex;
   align-items: center;

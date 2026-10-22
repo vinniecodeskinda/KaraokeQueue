@@ -118,7 +118,6 @@ async function init() {
 
   mountSongSearch($('search'), {
     buttonLabel: 'Add',
-    modeSwitch: true,
     onError: toast,
     onRequest: async ({ kind, song }) => {
       try {
@@ -159,6 +158,9 @@ async function init() {
 }
 
 async function start() {
+  // This click is the one chance to go fullscreen without asking again, so
+  // fullscreen the whole page now (not YouTube's player; reactions stay visible).
+  document.documentElement.requestFullscreen?.().catch(() => {});
   $('start-btn').disabled = true;
   $('start-btn').textContent = 'Loading…';
 
@@ -238,18 +240,52 @@ function floatReaction(payload) {
 }
 
 /**
- * Fullscreen the whole TV page with the video filling it (sidebar hidden).
- * Looks like YouTube's fullscreen, but our overlays (reactions, up-next)
- * still show, which they can't inside YouTube's own fullscreen.
+ * Fullscreen the whole TV *page* (like F11), never YouTube's player, so our
+ * overlays (reactions, up-next) still show on top. The queue sidebar keeps
+ * whatever state it's in; hide it with the queue button for a full video.
+ *
+ * Browsers only allow *entering* fullscreen right after a click or key press
+ * on this device. So a request from a phone tries, and if the browser says
+ * no, the TV shows "click or press any key" and finishes on the next input.
+ * Leaving fullscreen needs no click, so phones can always exit.
  */
+async function enterFullscreen() {
+  if (document.fullscreenElement) return;
+  try {
+    await document.documentElement.requestFullscreen();
+  } catch {
+    showFullscreenPrompt();
+  }
+}
+
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen?.().catch(() => toast('Fullscreen isn’t available here.'));
+  else enterFullscreen();
 }
+
+function showFullscreenPrompt() {
+  const prompt = $('fs-prompt');
+  if (!prompt.hidden) return;
+  prompt.hidden = false;
+  const finish = () => {
+    cleanup();
+    document.documentElement.requestFullscreen?.().catch(() => toast('Fullscreen isn’t available in this browser.'));
+  };
+  const cleanup = () => {
+    prompt.hidden = true;
+    clearTimeout(timer);
+    removeEventListener('pointerdown', finish, true);
+    removeEventListener('keydown', finish, true);
+  };
+  addEventListener('pointerdown', finish, true);
+  addEventListener('keydown', finish, true);
+  const timer = setTimeout(cleanup, 20000);   // nobody at the TV — give up quietly
+}
+
 document.addEventListener('fullscreenchange', () => {
-  const on = document.fullscreenElement === document.documentElement;
-  $('app').classList.toggle('fs-mode', on);
-  $('fs-btn').textContent = on ? '✕ Exit fullscreen' : '⛶ Fullscreen + reactions';
+  const on = Boolean(document.fullscreenElement);
+  $('fs-btn').textContent = on ? '✕ Exit fullscreen' : '⛶ Fullscreen';
+  sendState();   // phones' Fullscreen button follows along
 });
 
 /** Apply a remote action (from the TV's own buttons or any phone). */
@@ -259,6 +295,10 @@ function applyAction(action) {
     setCollapsed(!$('app').classList.contains('collapsed'));
     return;
   }
+  if (action === 'fullscreen') {
+    toggleFullscreen();
+    return;
+  }
   if (!player || !controller?.state.playing) return;
   // On the up-next screen, Play / Start over start the song now; Skip skips it.
   if (intermission && (action === 'toggle' || action === 'restart')) {
@@ -266,11 +306,20 @@ function applyAction(action) {
     return;
   }
   if (intermission && action === 'skip') hideIntermission();
+  if (intermission && (action === 'back5' || action === 'fwd5')) return;   // nothing to seek yet
   switch (action) {
     case 'restart':
       player.seekTo(0, true);
       player.playVideo();
       break;
+    case 'back5':
+    case 'fwd5': {
+      const end = player.getDuration() || Infinity;
+      const to = player.getCurrentTime() + (action === 'fwd5' ? 5 : -5);
+      // Don't seek past the end (that would skip the song) — stop just short.
+      player.seekTo(Math.max(0, Math.min(end - 1, to)), true);
+      break;
+    }
     case 'toggle':
       if (isPlaying()) player.pauseVideo();
       else player.playVideo();
@@ -306,7 +355,11 @@ function applyAction(action) {
 const isPlaying = () => [1, 3].includes(player?.getPlayerState());   // playing or buffering
 
 function playerState() {
-  const tv = { tv: true, queueOpen: !$('app').classList.contains('collapsed') };
+  const tv = {
+    tv: true,
+    queueOpen: !$('app').classList.contains('collapsed'),
+    fullscreen: Boolean(document.fullscreenElement),
+  };
   if (!player || !controller?.state.playing) return { ...tv, active: false };
   return {
     ...tv,

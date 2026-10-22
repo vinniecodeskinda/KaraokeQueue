@@ -36,7 +36,7 @@
         <div class="reactions" id="reactions" aria-hidden="true"></div>
 
         <button type="button" class="fs-btn" id="fs-btn"
-                title="Fullscreen that still shows emoji reactions and the up-next screen">⛶ Fullscreen + reactions</button>
+                title="Fullscreen the whole page (reactions and the up-next screen still show)">⛶ Fullscreen</button>
       </main>
 
       <aside class="sidebar" id="sidebar">
@@ -88,6 +88,11 @@
         <p class="overlay-code" id="overlay-code"></p>
         <button id="start-btn" type="button">▶ Start the party</button>
         <p>Browsers require one click before videos can play with sound.</p>
+      </div>
+
+      <!-- Shown when a phone asks for fullscreen but the browser needs a local click first -->
+      <div class="fs-prompt" id="fs-prompt" hidden>
+        <p>⛶ Click anywhere or press any key to go fullscreen</p>
       </div>
 
       <div class="gate" id="gate" hidden></div>

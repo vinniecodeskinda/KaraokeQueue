@@ -1,16 +1,22 @@
 // Song search widget shared by the host (TV) and join (phone) pages.
 //
-// Searches YouTube through our Pages Function, using the device's search
-// mode (see search-mode.js): the official API (~100 searches/day, results
-// cached 7 days) or backup search. If the API's daily limit runs out, it
-// retries with backup search automatically. Pasting a YouTube link queues
-// that video directly in either mode. Searches run on Enter / Search, not
-// on every keystroke. The "Prioritize karaoke" switch adds "karaoke" to the
-// query and ranks karaoke/lyric versions first. Both settings are per device.
+// Searches YouTube through our Pages Function. It always uses the official
+// API (~100 searches/day, results cached 7 days); once the daily limit is
+// used up, the server switches everyone to backup search until the limit
+// resets at midnight Pacific, then goes back to the API by itself. Pasting
+// a YouTube link queues that video directly. Searches run on Enter /
+// Search, not on every keystroke. The "Prioritize karaoke" switch adds
+// "karaoke" to the query and ranks karaoke/lyric versions first (per device).
 import { searchYoutube } from './queue-api.js';
 import { escapeHtml } from './dom.js';
 import { store } from './store.js';
-import { getSearchMode, mountSearchModeSwitch } from './search-mode.js';
+
+// An earlier version let each device pick backup search; forget that choice.
+try {
+  localStorage.removeItem('karaoke.searchMode');
+} catch {
+  /* ignore */
+}
 
 const SOURCE_LABEL = {
   api: 'YouTube search',
@@ -30,9 +36,8 @@ export const isKaraokeVersion = (song) =>
  * @param {(req: {kind: 'youtube', song: object}) => Promise<void>} opts.onRequest
  * @param {(msg: string) => void} opts.onError
  * @param {string} [opts.buttonLabel]
- * @param {boolean} [opts.modeSwitch]  show the "Backup search" slider here too
  */
-export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Request', modeSwitch = false }) {
+export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Request' }) {
   let preferKaraoke = store.get(PREF_KEY, true);
   let apiOrder = [];   // results as YouTube returned them
   let results = [];    // what's on screen (maybe re-sorted)
@@ -50,7 +55,6 @@ export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Reque
       <span class="track" aria-hidden="true"><span class="thumb"></span></span>
       <span class="switch-label">Prioritize karaoke versions</span>
     </label>
-    ${modeSwitch ? '<div class="mode-slot"></div>' : ''}
     <p class="results-source" hidden></p>
     <ul class="results"></ul>`;
 
@@ -59,7 +63,6 @@ export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Reque
   const list = root.querySelector('.results');
   const sourceNote = root.querySelector('.results-source');
   const searchBtn = root.querySelector('.search-btn');
-  if (modeSwitch) mountSearchModeSwitch(root.querySelector('.mode-slot'));
 
   root.querySelector('form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -96,25 +99,16 @@ export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Reque
     sourceNote.hidden = true;
     list.innerHTML = '<li class="empty">Searching YouTube…</li>';
     try {
-      let res;
-      let fellBack = false;
-      try {
-        res = await searchYoutube(term, { karaoke: preferKaraoke, mode: getSearchMode() });
-      } catch (err) {
-        if (err.code !== 'quota') throw err;
-        // Official daily limit used up → try backup search instead.
-        fellBack = true;
-        list.innerHTML = '<li class="empty">Daily limit reached — trying backup search…</li>';
-        res = await searchYoutube(term, { karaoke: preferKaraoke, mode: 'scrape' });
-      }
+      // The server picks: official API, or backup search while today's limit is used up.
+      const res = await searchYoutube(term, { karaoke: preferKaraoke });
       if (!res.available) {
         list.innerHTML = '<li class="empty">YouTube search isn’t set up (needs YOUTUBE_API_KEY).</li>';
         return;
       }
       apiOrder = res.items;
       sourceNote.hidden = false;
-      sourceNote.textContent = fellBack
-        ? 'Official searches are used up for today — these are from backup search.'
+      sourceNote.textContent = res.fallback
+        ? `Official searches are used up until ${res.resetsAt} — these are from backup search.`
         : `From: ${SOURCE_LABEL[res.source] ?? 'YouTube'}`;
       render();
       if (res.source === 'link' && !res.items.length) {

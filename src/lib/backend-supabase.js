@@ -190,13 +190,13 @@ export async function advanceQueue(roomId, hostKey, finishedId = null, outcome =
 }
 
 /**
- * Search YouTube via our Pages Function (key stays server-side).
- * mode 'api' = official API, 'scrape' = backup search; pasted links work in
- * both. Throws an error with code 'quota' when the API's daily limit is used up.
- * Returns { available, items, source: 'api' | 'scrape' | 'link' }.
+ * Search YouTube via our Pages Function (key stays server-side). The server
+ * uses the official API, or backup search while today's API limit is used up
+ * (fallback=true). Pasted links are looked up directly.
+ * Returns { available, items, source: 'api' | 'scrape' | 'link', fallback, resetsAt }.
  */
-export async function searchYoutube(term, { karaoke = true, mode = 'api' } = {}) {
-  const params = new URLSearchParams({ q: term, karaoke: karaoke ? '1' : '0', mode });
+export async function searchYoutube(term, { karaoke = true } = {}) {
+  const params = new URLSearchParams({ q: term, karaoke: karaoke ? '1' : '0' });
   let res;
   try {
     res = await fetch(`/api/youtube-search?${params}`);
@@ -206,22 +206,22 @@ export async function searchYoutube(term, { karaoke = true, mode = 'api' } = {})
   // In plain `vite dev` there is no Functions runtime: treat as not set up.
   const isJson = res.headers.get('content-type')?.includes('application/json');
   if (!isJson || res.status === 501 || res.status === 404) return { available: false, items: [] };
-  if (res.status === 429) {
-    const err = new Error(
-      `Today’s official YouTube searches are used up — they come back at ${quotaResetTime()}.`,
-    );
-    err.code = 'quota';
-    throw err;
-  }
   if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
     throw new Error(
-      mode === 'scrape'
-        ? 'Backup search couldn’t reach YouTube right now — try again, or paste a YouTube link.'
-        : 'YouTube search is unavailable right now',
+      body.error === 'backup_failed'
+        ? `Official searches are used up until ${quotaResetTime()}, and backup search couldn’t reach YouTube — try again, or paste a YouTube link.`
+        : 'YouTube search is unavailable right now — try again, or paste a YouTube link.',
     );
   }
   const body = await res.json();
-  return { available: true, items: body.items ?? [], source: body.source ?? mode };
+  return {
+    available: true,
+    items: body.items ?? [],
+    source: body.source ?? 'api',
+    fallback: Boolean(body.fallback),
+    resetsAt: quotaResetTime(),
+  };
 }
 
 /**

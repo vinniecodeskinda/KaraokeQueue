@@ -1,16 +1,18 @@
-// Cloudflare Pages Function: GET /api/youtube-search?q=...&karaoke=1&mode=api|scrape
+// Cloudflare Pages Function: GET /api/youtube-search?q=...&karaoke=1
 //
-// Song search, three ways:
+// Song search:
 //  - q is a YouTube link → looked up with YouTube's public oEmbed endpoint
-//    (no API key, no quota). Works in any mode.
-//  - mode=api (default) → YouTube Data API v3 search.list (100 quota units
-//    of the free 10,000/day). Returns 429 when the daily quota is used up;
-//    the app then retries with mode=scrape.
-//  - mode=scrape → backup search with no daily limit: asks youtube.com's own
-//    web search (the request its search page makes) and keeps only videos
-//    that allow embedding. Not an official API — YouTube can change or
-//    block it at any time, and using it is against YouTube's Terms of
-//    Service, so it is only used as a fallback/opt-in.
+//    (no API key, no quota).
+//  - Otherwise the official YouTube Data API v3 search.list (100 quota units
+//    of the free 10,000/day).
+//  - Once the API says today's quota is used up, a flag in KV switches
+//    everyone to backup search until the quota resets (midnight Pacific).
+//    The flag expires at that moment, so the API is used again by itself.
+//    Backup search asks youtube.com's own web search (the request its search
+//    page makes) and keeps only videos that allow embedding. It is not an
+//    official API — YouTube can change or block it at any time, and using it
+//    is against YouTube's Terms of Service — so it is only a fallback.
+//    (mode=scrape forces it, for testing.)
 //
 // Results are cached 7 days in Workers KV (binding SEARCH_CACHE), shared
 // worldwide, so repeat searches are free either way.
@@ -18,6 +20,7 @@
 // Configure: YOUTUBE_API_KEY as a Pages secret; KV binding in wrangler.toml.
 
 const CACHE_TTL_SECONDS = 60 * 60 * 24 * 7;
+const QUOTA_FLAG_KEY = 'quota-exhausted-until';
 const WEB_CLIENT_VERSION = '2.20241010.00.00';
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
@@ -36,32 +39,77 @@ export async function onRequestGet({ request, env, waitUntil }) {
       : json({ items: [], source: 'link', error: 'not_embeddable' });
   }
 
-  const mode = params.get('mode') === 'scrape' ? 'scrape' : 'api';
+  const forceBackup = params.get('mode') === 'scrape';   // testing only
   // "Prioritize karaoke versions" switch (default on).
   const karaoke = params.get('karaoke') !== '0';
   const query = karaoke && !/karaoke/i.test(q) ? `${q} karaoke` : q;
+  // Normalised so "Queen", " queen  " share one cached response.
+  const normalized = query.toLowerCase().replace(/\s+/g, ' ');
 
-  // Normalised key so "Queen", " queen  " share one cached response.
-  const key = `${mode === 'scrape' ? 'yt-scrape' : 'yt-search'}:${query.toLowerCase().replace(/\s+/g, ' ')}`;
-  const cached = await cacheGet(env, key);
-  if (cached) return json({ ...cached, source: mode }, 200, { 'X-Cache': 'HIT' });
-
-  let items;
-  if (mode === 'scrape') {
-    try {
-      items = await scrapeSearch(query);
-    } catch (err) {
-      return json({ error: 'scrape_failed', detail: String(err.message ?? err), items: [] }, 502);
-    }
-  } else {
+  // 1. Official API (unless today's quota is known to be used up).
+  if (!forceBackup) {
+    const apiKey = `yt-search:${normalized}`;
+    const cached = await cacheGet(env, apiKey);
+    if (cached) return json({ ...cached, source: 'api' }, 200, { 'X-Cache': 'HIT' });
     if (!env.YOUTUBE_API_KEY) return json({ error: 'not_configured', items: [] }, 501);
-    const result = await apiSearch(query, env.YOUTUBE_API_KEY);
-    if (result.error) return json({ error: result.error, items: [] }, result.status);
-    items = result.items;
+    if (!(await quotaExhausted(env))) {
+      const result = await apiSearch(query, env.YOUTUBE_API_KEY);
+      if (!result.error) {
+        if (result.items.length) waitUntil(cachePut(env, apiKey, { items: result.items }));
+        return json({ items: result.items, source: 'api' }, 200, { 'X-Cache': 'MISS' });
+      }
+      if (result.error !== 'quota_exceeded') return json({ error: result.error, items: [] }, result.status);
+      waitUntil(markQuotaExhausted(env));
+    }
   }
 
-  if (items.length) waitUntil(cachePut(env, key, { items }));
-  return json({ items, source: mode }, 200, { 'X-Cache': 'MISS' });
+  // 2. Backup search (quota used up, or forced for testing).
+  const fallback = !forceBackup;
+  const backupKey = `yt-scrape:${normalized}`;
+  const cachedBackup = await cacheGet(env, backupKey);
+  if (cachedBackup) {
+    return json({ ...cachedBackup, source: 'scrape', fallback }, 200, { 'X-Cache': 'HIT' });
+  }
+  let items;
+  try {
+    items = await scrapeSearch(query);
+  } catch (err) {
+    return json({ error: 'backup_failed', detail: String(err.message ?? err), items: [] }, 502);
+  }
+  if (items.length) waitUntil(cachePut(env, backupKey, { items }));
+  return json({ items, source: 'scrape', fallback }, 200, { 'X-Cache': 'MISS' });
+}
+
+// ------------------------------------------------------------- quota flag
+
+/** True while the API's daily quota is known to be used up. */
+async function quotaExhausted(env) {
+  if (!env.SEARCH_CACHE) return false;
+  const until = Number(await env.SEARCH_CACHE.get(QUOTA_FLAG_KEY));
+  return until > Date.now();
+}
+
+/** Remember "quota used up" until it resets at the next midnight Pacific. */
+function markQuotaExhausted(env) {
+  if (!env.SEARCH_CACHE) return null;
+  const seconds = secondsUntilPacificMidnight();
+  return env.SEARCH_CACHE.put(QUOTA_FLAG_KEY, String(Date.now() + seconds * 1000), {
+    expirationTtl: Math.max(60, seconds),   // KV minimum TTL is 60s
+  });
+}
+
+function secondsUntilPacificMidnight() {
+  const [h, m, s] = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hourCycle: 'h23',
+  })
+    .format(new Date())
+    .split(':')
+    .map(Number);
+  return (24 - h) * 3600 - m * 60 - s;
 }
 
 // ------------------------------------------------------------- official API

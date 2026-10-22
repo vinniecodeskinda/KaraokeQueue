@@ -122,16 +122,6 @@ body.guest { min-height: 100vh; }
 .pager::-webkit-scrollbar { display: none; }
 .pager-page { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; }
 .pager-page + .pager-page { padding-left: 2px; }
-.remote-setting {
-  margin-top: 16px;
-  padding: 12px 14px;
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-.setting-title { margin: 0 0 2px; font-weight: 600; font-size: 0.9rem; }
-.remote-setting .switch { margin-top: 6px; align-items: flex-start; }
-.remote-setting .track { margin-top: 2px; }
-.swipe-hint { text-align: center; color: var(--muted); font-size: 0.8rem; margin: 14px 0 0; }
 .queue-row .remote-btn { flex-direction: row; justify-content: center; gap: 8px; padding: 0.6em; }
 .queue-row .remote-btn .icon { font-size: 1.2rem; }
 

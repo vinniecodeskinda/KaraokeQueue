@@ -16,6 +16,8 @@ const BUTTONS = [
   ['mute', '🔇', 'Mute'],
   ['voldown', '🔉', 'Vol −'],
   ['volup', '🔊', 'Vol +'],
+  ['back5', '⏪', 'Back 5s'],
+  ['fwd5', '⏩', 'Forward 5s'],
 ];
 
 /**
@@ -23,14 +25,19 @@ const BUTTONS = [
  * Returns update(state) where state = { tv, queueOpen, active, playing, rate,
  * volume, muted }. tv=false → the TV isn't answering (everything disabled);
  * active=false → nothing is playing (playback buttons disabled).
- * `queueToggle` adds a Show/Hide queue button for the TV's sidebar.
+ * `queueToggle` adds TV-screen buttons: Show/Hide queue (the sidebar) and
+ * Fullscreen TV (the whole page, like F11; never YouTube's player).
  */
 export function mountRemote(root, { onAction, compact = false, queueToggle = false }) {
   root.classList.add('remote', compact ? 'remote-compact' : 'remote-full');
   root.innerHTML = `
-    ${queueToggle ? `<div class="remote-row queue-row">${btn(['queue', '📋', 'Hide queue'])}</div>` : ''}
+    ${queueToggle ? `<div class="remote-row queue-row">${btn(['queue', '📋', 'Hide queue'])}${btn(['fullscreen', '⛶', 'Fullscreen TV'])}</div>` : ''}
     <div class="remote-row transport">
       ${BUTTONS.slice(0, 3).map(btn).join('')}
+    </div>
+    <div class="remote-row seek-row">
+      ${btn(BUTTONS[8])}
+      ${btn(BUTTONS[9])}
     </div>
     <div class="remote-row">
       ${btn(BUTTONS[3])}
@@ -58,7 +65,12 @@ export function mountRemote(root, { onAction, compact = false, queueToggle = fal
     const queue = q('[data-action=queue]');
     if (queue) {
       queue.disabled = !state?.tv;
-      queue.querySelector('.label').textContent = state?.queueOpen === false ? 'Show queue on TV' : 'Hide queue on TV';
+      queue.querySelector('.label').textContent = state?.queueOpen === false ? 'Show queue' : 'Hide queue';
+    }
+    const fs = q('[data-action=fullscreen]');
+    if (fs) {
+      fs.disabled = !state?.tv;
+      fs.querySelector('.label').textContent = state?.fullscreen ? 'Exit fullscreen' : 'Fullscreen TV';
     }
     if (!active) return;
     const toggle = q('[data-action=toggle]');
