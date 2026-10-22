@@ -24,6 +24,7 @@ import {
 import { startHeartbeat } from '../lib/host-session.js';
 import { mountRemote, SPEEDS } from '../lib/remote.js';
 import { isReaction } from '../lib/reactions.js';
+import { ReactionField } from './reaction-field.js';
 import { mountSongSearch } from '../lib/song-search.js';
 import { currentName, promptName, saveName } from '../lib/name-dialog.js';
 import { store } from '../lib/store.js';
@@ -46,7 +47,7 @@ let loadedRowId = null;      // queue row currently on screen
 let resetSpeed = false;      // new song → back to normal speed once it starts
 let intermission = null;     // { timer } while the up-next screen is showing
 const INTERMISSION_SECONDS = 8;
-const MAX_FLOATING = 40;     // cap on-screen reactions so a spam-tapper can't flood the TV
+let reactionField;           // physics sim for floating emoji (created on init)
 
 if (isDemo) showDemoBanner();
 init();
@@ -227,24 +228,12 @@ function startNow() {
 
 // ------------------------------------------------------------- reactions
 
-/** Float an emoji (with the sender's name) up across the TV. */
+/** Float an emoji (with the sender's name) up the side of the TV. */
 function floatReaction(payload) {
-  const layer = $('reactions');
-  if (!isReaction(payload?.emoji) || layer.childElementCount >= MAX_FLOATING) return;
-  const el = document.createElement('div');
-  el.className = 'reaction';
-  el.style.left = `${5 + Math.random() * 85}%`;
-  el.style.setProperty('--drift', `${Math.round((Math.random() - 0.5) * 120)}px`);
-  el.style.setProperty('--dur', `${3.2 + Math.random() * 1.6}s`);
-  const emoji = document.createElement('span');
-  emoji.className = 'reaction-emoji';
-  emoji.textContent = payload.emoji;
-  const who = document.createElement('span');
-  who.className = 'reaction-name';
-  who.textContent = String(payload.name ?? '').slice(0, 40);
-  el.append(emoji, who);
-  el.addEventListener('animationend', () => el.remove());
-  layer.append(el);
+  if (!isReaction(payload?.emoji)) return;
+  reactionField ??= new ReactionField($('reactions'));
+  if (import.meta.env.DEV) window.__reactionField = reactionField;   // for testing
+  reactionField.add(payload.emoji, payload.name);
 }
 
 /**

@@ -85,13 +85,23 @@ body.host { overflow: hidden; height: 100vh; }
   overflow: hidden;
   pointer-events: none;
 }
+/* Positioned every frame by reaction-field.js (transform + opacity). */
 .reaction {
   position: absolute;
-  bottom: -12vh;
+  left: 0;
+  top: 0;
+  will-change: transform, opacity;
+}
+.reaction-pop {
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: float-up var(--dur, 4s) ease-out forwards;
+  animation: reaction-pop 0.35s ease-out;
+}
+@keyframes reaction-pop {
+  0% { transform: scale(0.3); }
+  70% { transform: scale(1.15); }
+  100% { transform: scale(1); }
 }
 .reaction-emoji { font-size: 8vh; line-height: 1; filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.5)); }
 .reaction-name {
@@ -101,15 +111,6 @@ body.host { overflow: hidden; height: 100vh; }
   background: rgb(15 11 30 / 0.7);
   font-size: 1.6vh;
   white-space: nowrap;
-}
-@keyframes float-up {
-  0%   { transform: translate(0, 0) scale(0.6); opacity: 0; }
-  10%  { transform: translate(0, -8vh) scale(1.1); opacity: 1; }
-  70%  { opacity: 1; }
-  100% { transform: translate(var(--drift, 0), -95vh) scale(0.9); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .reaction { animation-duration: 2s; }
 }
 
 /* ⛶ "fullscreen with reactions": the page goes fullscreen and the video
