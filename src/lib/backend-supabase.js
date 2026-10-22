@@ -189,9 +189,14 @@ export async function advanceQueue(roomId, hostKey, finishedId = null, outcome =
   return data;
 }
 
-/** YouTube Data API fallback via our Pages Function (key stays server-side). */
-export async function searchYoutube(term, { karaoke = true } = {}) {
-  const params = new URLSearchParams({ q: term, karaoke: karaoke ? '1' : '0' });
+/**
+ * Search YouTube via our Pages Function (key stays server-side).
+ * mode 'api' = official API, 'scrape' = backup search; pasted links work in
+ * both. Throws an error with code 'quota' when the API's daily limit is used up.
+ * Returns { available, items, source: 'api' | 'scrape' | 'link' }.
+ */
+export async function searchYoutube(term, { karaoke = true, mode = 'api' } = {}) {
+  const params = new URLSearchParams({ q: term, karaoke: karaoke ? '1' : '0', mode });
   let res;
   try {
     res = await fetch(`/api/youtube-search?${params}`);
@@ -202,14 +207,21 @@ export async function searchYoutube(term, { karaoke = true } = {}) {
   const isJson = res.headers.get('content-type')?.includes('application/json');
   if (!isJson || res.status === 501 || res.status === 404) return { available: false, items: [] };
   if (res.status === 429) {
+    const err = new Error(
+      `Today’s official YouTube searches are used up — they come back at ${quotaResetTime()}.`,
+    );
+    err.code = 'quota';
+    throw err;
+  }
+  if (!res.ok) {
     throw new Error(
-      `Today’s YouTube searches are used up — they come back at ${quotaResetTime()}. ` +
-        'Songs already searched this week still work.',
+      mode === 'scrape'
+        ? 'Backup search couldn’t reach YouTube right now — try again, or paste a YouTube link.'
+        : 'YouTube search is unavailable right now',
     );
   }
-  if (!res.ok) throw new Error('YouTube search is unavailable right now');
   const body = await res.json();
-  return { available: true, items: body.items ?? [] };
+  return { available: true, items: body.items ?? [], source: body.source ?? mode };
 }
 
 /**

@@ -26,6 +26,7 @@ import {
 } from '../lib/rooms.js';
 import { startHeartbeat, watchForHostHandover } from '../lib/host-session.js';
 import { mountRemote } from '../lib/remote.js';
+import { mountSearchModeSwitch } from '../lib/search-mode.js';
 import { REACTIONS } from '../lib/reactions.js';
 import { mountSongSearch } from '../lib/song-search.js';
 import { currentName, hasName, promptJoin, promptName, saveName } from '../lib/name-dialog.js';
@@ -108,6 +109,7 @@ async function init() {
   });
   showRemoteState({ active: false });
   wireRemotePager();
+  mountSearchModeSwitch($('search-mode-switch'));
   document.querySelector('.tab[data-tab=remote]').addEventListener('click', requestState);
   mountReactionBar();
 

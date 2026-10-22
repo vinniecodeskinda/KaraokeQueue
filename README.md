@@ -21,6 +21,10 @@ No sign-in anywhere. Guests only need the code or link.
 - **Search:** YouTube only, on both screens. It runs when you press Search or Enter. Each search uses YouTube API quota: about **100 searches/day** on the free tier, and repeated searches are cached for 7 days in Cloudflare Workers KV (binding `SEARCH_CACHE` in `wrangler.toml`). If searches run out, people see when they come back (midnight Pacific).
   - The **Prioritize karaoke versions** switch adds "karaoke" to the search and ranks karaoke/lyric versions first.
   - Songs people pick are still saved in the `songs` table, because the queue needs them, but there's no browsable catalog.
+  - **Backup search** (slider on the phone's Remote tab and in the TV's "Add a song" panel, saved per device) searches youtube.com's own web search instead of the API. There's no daily limit, and videos that block embedding are filtered out.
+    - It's **unofficial and against YouTube's Terms of Service**. YouTube can block or break it at any time, and it puts the API key/quota application at risk if noticed. It's meant as a fallback.
+    - With the slider OFF, the API is used and the app switches to backup search automatically when the daily limit runs out.
+  - **Pasting a YouTube link** into the search box queues that video in either mode. It uses YouTube's public oEmbed lookup, with no quota and no scraping.
 - **Playback controls:** on the TV sidebar and in every phone's **Remote** tab: Start over, Pause/Play, Skip, speed (0.5×–1.5×, resets to 1× for each new song), Mute, and Volume −/+. Phones also get **Show/Hide queue on TV**, and swiping left on the Remote tab opens the **Reactions** page (20 emoji that bounce up the TV and fade by mid-screen).
   - Phones send commands over Supabase Realtime Broadcast, and the TV reports its state back.
   - Key/pitch change isn't possible with YouTube embeds, because the audio can't be reached from the page. Searching for "lower key karaoke" versions is the workaround.

@@ -118,6 +118,7 @@ async function init() {
 
   mountSongSearch($('search'), {
     buttonLabel: 'Add',
+    modeSwitch: true,
     onError: toast,
     onRequest: async ({ kind, song }) => {
       try {

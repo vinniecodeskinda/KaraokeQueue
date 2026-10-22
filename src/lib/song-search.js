@@ -1,14 +1,22 @@
 // Song search widget shared by the host (TV) and join (phone) pages.
 //
-// Searches YouTube only (through our Pages Function, which keeps the API
-// key server-side). Each search costs YouTube API quota — about 100
-// searches/day on the free tier, with results cached for 24h — so it runs
-// when you press Enter or the Search button, not on every keystroke.
-// The "Prioritize karaoke" switch adds "karaoke" to the query and ranks
-// karaoke/lyric versions first. It is remembered per device.
+// Searches YouTube through our Pages Function, using the device's search
+// mode (see search-mode.js): the official API (~100 searches/day, results
+// cached 7 days) or backup search. If the API's daily limit runs out, it
+// retries with backup search automatically. Pasting a YouTube link queues
+// that video directly in either mode. Searches run on Enter / Search, not
+// on every keystroke. The "Prioritize karaoke" switch adds "karaoke" to the
+// query and ranks karaoke/lyric versions first. Both settings are per device.
 import { searchYoutube } from './queue-api.js';
 import { escapeHtml } from './dom.js';
 import { store } from './store.js';
+import { getSearchMode, mountSearchModeSwitch } from './search-mode.js';
+
+const SOURCE_LABEL = {
+  api: 'YouTube search',
+  scrape: 'Backup search',
+  link: 'Pasted link',
+};
 
 const PREF_KEY = 'karaoke.preferKaraoke';
 const KARAOKE_RE = /karaoke|instrumental|sing[- ]?along|lyrics/i;
@@ -22,8 +30,9 @@ export const isKaraokeVersion = (song) =>
  * @param {(req: {kind: 'youtube', song: object}) => Promise<void>} opts.onRequest
  * @param {(msg: string) => void} opts.onError
  * @param {string} [opts.buttonLabel]
+ * @param {boolean} [opts.modeSwitch]  show the "Backup search" slider here too
  */
-export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Request' }) {
+export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Request', modeSwitch = false }) {
   let preferKaraoke = store.get(PREF_KEY, true);
   let apiOrder = [];   // results as YouTube returned them
   let results = [];    // what's on screen (maybe re-sorted)
@@ -32,21 +41,25 @@ export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Reque
   root.classList.add('song-search');
   root.innerHTML = `
     <form class="search" role="search">
-      <input type="search" placeholder="Search YouTube for a song…" autocomplete="off"
-             enterkeyhint="search" aria-label="Search YouTube" />
+      <input type="search" placeholder="Search YouTube or paste a link…" autocomplete="off"
+             enterkeyhint="search" aria-label="Search YouTube or paste a YouTube link" />
       <button type="submit" class="search-btn">Search</button>
     </form>
-    <label class="switch">
+    <label class="switch karaoke-switch">
       <input type="checkbox" role="switch" ${preferKaraoke ? 'checked' : ''} />
       <span class="track" aria-hidden="true"><span class="thumb"></span></span>
       <span class="switch-label">Prioritize karaoke versions</span>
     </label>
+    ${modeSwitch ? '<div class="mode-slot"></div>' : ''}
+    <p class="results-source" hidden></p>
     <ul class="results"></ul>`;
 
   const input = root.querySelector('input[type=search]');
-  const toggle = root.querySelector('input[role=switch]');
+  const toggle = root.querySelector('.karaoke-switch input');
   const list = root.querySelector('.results');
+  const sourceNote = root.querySelector('.results-source');
   const searchBtn = root.querySelector('.search-btn');
+  if (modeSwitch) mountSearchModeSwitch(root.querySelector('.mode-slot'));
 
   root.querySelector('form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -80,15 +93,33 @@ export function mountSongSearch(root, { onRequest, onError, buttonLabel = 'Reque
     }
     lastTerm = term;
     searchBtn.disabled = true;
+    sourceNote.hidden = true;
     list.innerHTML = '<li class="empty">Searching YouTube…</li>';
     try {
-      const { available, items } = await searchYoutube(term, { karaoke: preferKaraoke });
-      if (!available) {
+      let res;
+      let fellBack = false;
+      try {
+        res = await searchYoutube(term, { karaoke: preferKaraoke, mode: getSearchMode() });
+      } catch (err) {
+        if (err.code !== 'quota') throw err;
+        // Official daily limit used up → try backup search instead.
+        fellBack = true;
+        list.innerHTML = '<li class="empty">Daily limit reached — trying backup search…</li>';
+        res = await searchYoutube(term, { karaoke: preferKaraoke, mode: 'scrape' });
+      }
+      if (!res.available) {
         list.innerHTML = '<li class="empty">YouTube search isn’t set up (needs YOUTUBE_API_KEY).</li>';
         return;
       }
-      apiOrder = items;
+      apiOrder = res.items;
+      sourceNote.hidden = false;
+      sourceNote.textContent = fellBack
+        ? 'Official searches are used up for today — these are from backup search.'
+        : `From: ${SOURCE_LABEL[res.source] ?? 'YouTube'}`;
       render();
+      if (res.source === 'link' && !res.items.length) {
+        list.innerHTML = '<li class="empty">That video can’t be played here (it’s private, missing, or blocks embedding).</li>';
+      }
     } catch (err) {
       list.innerHTML = '';
       onError(err.message);
