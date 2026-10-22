@@ -1,8 +1,7 @@
 // Floating emoji reactions on the TV, as a tiny 2D physics sim.
 //
-// Each reaction is a round body that rises from the bottom in a lane near
-// the left or right edge (keeping the singer and lyrics in the middle
-// clear). It has its own speed and a wobbly path, bounces off other
+// Each reaction is a round body that rises from a random spot along the
+// bottom. It has its own speed and a wobbly path, bounces off other
 // reactions and the screen edges, and fades out on the way to the middle
 // of the screen. It's gone by the halfway line.
 
@@ -35,9 +34,8 @@ export class ReactionField {
     if (this.items.length >= MAX_ITEMS) return;
     const { w, h } = this;
     const r = Math.max(16, h * 0.045);   // body radius, roughly the emoji size
-    const side = Math.random() < 0.5 ? -1 : 1;
-    // Lane centre: within the outer ~20% of the screen on that side.
-    const laneX = side < 0 ? rand(0.04, 0.2) * w : rand(0.8, 0.96) * w;
+    // Lane: anywhere across the screen; the body sways around it.
+    const laneX = rand(0.05, 0.95) * w;
 
     const el = document.createElement('div');
     el.className = 'reaction';

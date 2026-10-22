@@ -253,6 +253,11 @@ document.addEventListener('fullscreenchange', () => {
 
 /** Apply a remote action (from the TV's own buttons or any phone). */
 function applyAction(action) {
+  // Show/hide the queue sidebar works any time, even before a song plays.
+  if (action === 'queue') {
+    setCollapsed(!$('app').classList.contains('collapsed'));
+    return;
+  }
   if (!player || !controller?.state.playing) return;
   // On the up-next screen, Play / Start over start the song now; Skip skips it.
   if (intermission && (action === 'toggle' || action === 'restart')) {
@@ -300,8 +305,10 @@ function applyAction(action) {
 const isPlaying = () => [1, 3].includes(player?.getPlayerState());   // playing or buffering
 
 function playerState() {
-  if (!player || !controller?.state.playing) return { active: false };
+  const tv = { tv: true, queueOpen: !$('app').classList.contains('collapsed') };
+  if (!player || !controller?.state.playing) return { ...tv, active: false };
   return {
+    ...tv,
     active: true,
     upNext: Boolean(intermission),
     playing: isPlaying(),
@@ -420,12 +427,14 @@ function showRoom() {
 }
 
 /** Sidebar collapse: player goes full width; a small pill brings it back. */
+function setCollapsed(collapsed) {
+  $('app').classList.toggle('collapsed', collapsed);
+  $('show-sidebar').hidden = !collapsed;
+  store.set(COLLAPSED_KEY, collapsed);
+  sendState();   // phones' "Show/Hide queue" button follows along
+}
+
 function wireCollapse() {
-  const setCollapsed = (collapsed) => {
-    $('app').classList.toggle('collapsed', collapsed);
-    $('show-sidebar').hidden = !collapsed;
-    store.set(COLLAPSED_KEY, collapsed);
-  };
   setCollapsed(store.get(COLLAPSED_KEY, false));
   $('collapse-btn').addEventListener('click', () => setCollapsed(true));
   $('show-sidebar').addEventListener('click', () => setCollapsed(false));

@@ -104,8 +104,10 @@ async function init() {
   // Remote tab: everyone can control the TV player.
   updateRemote = mountRemote($('phone-remote'), {
     onAction: (action) => live.send('control', { action }),
+    queueToggle: true,
   });
   showRemoteState({ active: false });
+  wireRemotePager();
   document.querySelector('.tab[data-tab=remote]').addEventListener('click', requestState);
   mountReactionBar();
 
@@ -238,24 +240,39 @@ function requestState() {
 }
 
 function showRemoteState(state) {
-  if (state?.active) clearTimeout(stateTimeout);
+  if (state?.tv) clearTimeout(stateTimeout);
   updateRemote(state);
-  $('remote-hint').textContent = !state?.active
-    ? 'Nothing is playing on the TV right now (or the TV player hasn’t been started).'
-    : state.upNext
-      ? 'The TV is showing who’s up next — press Play to start the song now.'
-      : 'Controls the TV for everyone.';
+  $('remote-hint').textContent = !state?.tv
+    ? 'The TV screen isn’t connected right now.'
+    : !state.active
+      ? 'Nothing is playing yet — you can still show or hide the queue on the TV.'
+      : state.upNext
+        ? 'The TV is showing who’s up next — press Play to start the song now.'
+        : 'Controls the TV for everyone.';
 }
 
 // ------------------------------------------------------------- reactions
 
 /** Emoji bar pinned to the bottom of the screen; taps float up on the TV. */
+/** Remote tab: swipe (or tap the labels) between Controls and Reactions. */
+function wireRemotePager() {
+  const pager = $('remote-pager');
+  const tabs = [...document.querySelectorAll('.pager-tab')];
+  const select = (i) => tabs.forEach((t, j) => t.setAttribute('aria-selected', String(i === j)));
+  tabs.forEach((t, i) =>
+    t.addEventListener('click', () => pager.scrollTo({ left: i * pager.clientWidth, behavior: 'smooth' })),
+  );
+  pager.addEventListener('scroll', () => select(Math.round(pager.scrollLeft / pager.clientWidth)), {
+    passive: true,
+  });
+}
+
+/** Reactions page of the Remote tab; taps float up on the TV. */
 function mountReactionBar() {
-  const bar = $('react-bar');
+  const bar = $('react-grid');
   bar.innerHTML = REACTIONS.map(
     (e) => `<button type="button" class="react-btn" data-emoji="${e}" aria-label="Send ${e}">${e}</button>`,
   ).join('');
-  bar.hidden = false;
   let last = 0;
   bar.addEventListener('click', (e) => {
     const btn = e.target.closest('.react-btn');

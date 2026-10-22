@@ -54,11 +54,23 @@
       </section>
 
       <section class="panel" data-panel="remote" hidden>
-        <p class="remote-hint" id="remote-hint"></p>
-        <div id="phone-remote"></div>
+        <!-- Two pages you can swipe between (or tap the labels) -->
+        <div class="pager-tabs" role="tablist">
+          <button type="button" class="pager-tab" data-page="0" aria-selected="true">🎛️ Controls</button>
+          <button type="button" class="pager-tab" data-page="1" aria-selected="false">😀 Reactions</button>
+        </div>
+        <div class="pager" id="remote-pager">
+          <div class="pager-page">
+            <p class="remote-hint" id="remote-hint"></p>
+            <div id="phone-remote"></div>
+            <p class="swipe-hint">Swipe left for reactions →</p>
+          </div>
+          <div class="pager-page">
+            <p class="remote-hint">Tap to send — they float up on the TV.</p>
+            <div class="react-grid" id="react-grid"></div>
+          </div>
+        </div>
       </section>
-
-      <nav class="react-bar" id="react-bar" aria-label="Send a reaction to the TV" hidden></nav>
 
       <div class="toast" id="toast" role="status" hidden></div>
       <div class="gate" id="gate" hidden></div>
