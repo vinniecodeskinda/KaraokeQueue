@@ -42,9 +42,20 @@ body.host { overflow: hidden; height: 100vh; }
   padding: 16px;
   background: radial-gradient(circle at 50% 40%, var(--surface-2), var(--bg) 70%);
 }
-.idle h1 { font-size: 6vh; margin: 0 0 0.4em; }
+.idle h1 { font-size: 6vh; margin: 0 0 0.5em; }
 .idle p { font-size: 2.4vh; color: var(--muted); margin: 0.2em 0; }
 .idle-site { color: var(--text); }
+/* QR code beside the room code */
+.idle-join { display: flex; align-items: center; justify-content: center; gap: 5vh; }
+.idle-qr {
+  width: 30vh;
+  height: 30vh;
+  padding: 1.2vh;
+  border-radius: 2vh;
+  background: #fff;
+  flex: none;
+}
+.idle-text { text-align: left; }
 .idle-code {
   margin-top: 0.3em;
   font-size: 11vh;
@@ -70,25 +81,31 @@ body.host { overflow: hidden; height: 100vh; }
   background: radial-gradient(circle at 50% 40%, rgb(124 92 255 / 0.45), var(--bg) 72%);
 }
 .intermission[hidden] { display: none; }
+/* All text white with a dark shadow, so it stays readable over the cued
+   video's thumbnail. The song is the headline; the singer is secondary. */
+.intermission p,
+.intermission h2,
+.im-count {
+  color: #fff;
+  text-shadow: 0 2px 4px rgb(0 0 0 / 0.85), 0 0 24px rgb(0 0 0 / 0.6);
+}
 .im-label {
   margin: 0;
-  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.2em;
   font-weight: 700;
   font-size: 2.4vh;
 }
-.im-singer { margin: 0; font-size: 7vh; line-height: 1.1; }
-.im-song { margin: 0; color: var(--muted); font-size: 3vh; max-width: 80%; }
+.im-song { margin: 0; font-size: 7vh; font-weight: 800; line-height: 1.1; max-width: 85%; overflow-wrap: anywhere; }
+.im-singer { margin: 0; font-size: 3.4vh; font-weight: 600; }
 .im-count {
   margin: 0.3em 0;
   font-size: 12vh;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 40px rgb(255 61 139 / 0.6);
 }
 #im-start { font-size: 2.4vh; padding: 0.7em 1.6em; }
-.im-then { margin: 0.6em 0 0; color: var(--muted); font-size: 2.2vh; }
+.im-then { margin: 0.6em 0 0; font-size: 2.2vh; }
 
 /* Floating audience reactions */
 .reactions {
@@ -126,7 +143,8 @@ body.host { overflow: hidden; height: 100vh; }
   white-space: nowrap;
 }
 
-/* ⛶ fullscreens the whole page (like F11), so overlays still show on top. */
+/* ⛶ "fullscreen with reactions": the page goes fullscreen and the video
+   fills it (sidebar hidden), so overlays still show on top. */
 .fs-btn {
   position: absolute;
   top: 12px;
@@ -142,43 +160,8 @@ body.host { overflow: hidden; height: 100vh; }
   transition: opacity 0.2s;
 }
 .fs-btn:hover, .fs-btn:focus-visible { opacity: 1; }
-
-/* "Click or press any key to go fullscreen" (a phone asked; the browser needs a local input) */
-.fs-prompt {
-  position: fixed;
-  left: 50%;
-  bottom: 8vh;
-  transform: translateX(-50%);
-  z-index: 110;
-  padding: 0.9em 1.6em;
-  border-radius: 999px;
-  background: rgb(15 11 30 / 0.92);
-  border: 1px solid var(--accent);
-  box-shadow: 0 10px 40px rgb(0 0 0 / 0.5);
-  font-size: 2.4vh;
-  font-weight: 600;
-  animation: pill-in 0.3s ease-out both;
-}
-.fs-prompt[hidden] { display: none; }
-.fs-prompt p { margin: 0; }
-
-.now-playing {
-  position: absolute;
-  left: 2vw;
-  bottom: 9vh;           /* clear of the YouTube control bar */
-  display: flex;
-  align-items: baseline;
-  gap: 0.6em;
-  padding: 0.6em 1.1em;
-  background: rgb(15 11 30 / 0.78);
-  backdrop-filter: blur(6px);
-  border-radius: var(--radius);
-  font-size: 2.2vh;
-  pointer-events: none;
-}
-.now-playing .label { color: var(--accent); text-transform: uppercase; font-size: 0.75em; letter-spacing: 0.08em; }
-.now-playing strong { font-size: 1.2em; }
-.now-playing[hidden] { display: none; }
+.host #app.fs-mode .sidebar,
+.host #app.fs-mode .show-sidebar { display: none; }
 
 /* ------------------------------------------------------------- sidebar */
 
@@ -394,11 +377,12 @@ body.host { overflow: hidden; height: 100vh; }
   .stage { overflow: hidden; }
   .idle h1 { font-size: 5.5vw; margin-bottom: 0.2em; }
   .idle p { font-size: 3vw; }
-  .idle-code { font-size: 10vw; }
-  .now-playing { font-size: 3vw; bottom: 14vw; }
+  .idle-code { font-size: 8vw; }
+  .idle-join { gap: 3vw; }
+  .idle-qr { width: 22vw; height: 22vw; padding: 1vw; border-radius: 1.5vw; }
   .im-label { font-size: 2.6vw; }
-  .im-singer { font-size: 6vw; }
-  .im-song, .im-then { font-size: 3vw; }
+  .im-song { font-size: 6vw; }
+  .im-singer, .im-then { font-size: 3vw; }
   .im-count { font-size: 9vw; margin: 0; }
   #im-start { font-size: 3vw; }
   .reaction-emoji { font-size: 8vw; }

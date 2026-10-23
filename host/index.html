@@ -10,23 +10,24 @@
     <div id="app">
       <main class="stage">
         <div class="player-frame"><div id="player"></div></div>
-        <div class="now-playing" id="now-playing" hidden>
-          <span class="label">Now singing</span>
-          <strong id="np-guest"></strong>
-          <span id="np-song"></span>
-        </div>
+        <!-- Queue empty: how to join (QR code + room code) -->
         <div class="idle" id="idle">
           <h1>🎤 <span id="idle-name">Karaoke Night</span></h1>
-          <p>Scan the QR code, or go to <b class="idle-site" id="idle-site"></b></p>
-          <p>and enter room code</p>
-          <div class="idle-code" id="idle-code"></div>
+          <div class="idle-join">
+            <canvas class="idle-qr" id="idle-qr" width="300" height="300" aria-label="QR code to join this room"></canvas>
+            <div class="idle-text">
+              <p>Scan the QR code, or go to <b class="idle-site" id="idle-site"></b></p>
+              <p>and enter room code</p>
+              <div class="idle-code" id="idle-code"></div>
+            </div>
+          </div>
         </div>
 
-        <!-- Between songs: who's up next, with a countdown -->
+        <!-- Between songs: the next song (big), who's singing it, and a countdown -->
         <div class="intermission" id="intermission" hidden>
           <p class="im-label">Up next</p>
-          <h2 class="im-singer" id="im-singer"></h2>
-          <p class="im-song" id="im-song"></p>
+          <h2 class="im-song" id="im-song"></h2>
+          <p class="im-singer" id="im-singer"></p>
           <div class="im-count" id="im-count"></div>
           <button type="button" id="im-start">▶ Start now</button>
           <p class="im-then" id="im-then"></p>
@@ -36,7 +37,7 @@
         <div class="reactions" id="reactions" aria-hidden="true"></div>
 
         <button type="button" class="fs-btn" id="fs-btn"
-                title="Fullscreen the whole page (reactions and the up-next screen still show)">⛶ Fullscreen</button>
+                title="Fullscreen that still shows emoji reactions and the up-next screen">⛶ Fullscreen + reactions</button>
       </main>
 
       <aside class="sidebar" id="sidebar">
@@ -88,11 +89,6 @@
         <p class="overlay-code" id="overlay-code"></p>
         <button id="start-btn" type="button">▶ Start the party</button>
         <p>Browsers require one click before videos can play with sound.</p>
-      </div>
-
-      <!-- Shown when a phone asks for fullscreen but the browser needs a local click first -->
-      <div class="fs-prompt" id="fs-prompt" hidden>
-        <p>⛶ Click anywhere or press any key to go fullscreen</p>
       </div>
 
       <div class="gate" id="gate" hidden></div>

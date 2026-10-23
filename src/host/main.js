@@ -158,9 +158,6 @@ async function init() {
 }
 
 async function start() {
-  // This click is the one chance to go fullscreen without asking again, so
-  // fullscreen the whole page now (not YouTube's player; reactions stay visible).
-  document.documentElement.requestFullscreen?.().catch(() => {});
   $('start-btn').disabled = true;
   $('start-btn').textContent = 'Loading…';
 
@@ -198,10 +195,11 @@ async function start() {
 /** A new song is cued: show who's up, count down, then play. */
 function showIntermission(row, upNext) {
   hideIntermission();
-  $('im-singer').textContent = `🎤 ${row.guest_name}`;
-  $('im-song').textContent = [row.song.title, row.song.artist].filter(Boolean).join(' — ');
+  // The song is the headline; who's singing it is the smaller line under it.
+  $('im-song').textContent = row.song.title;
+  $('im-singer').textContent = `🎤 Sung by ${row.guest_name}`;
   const then = upNext[0];
-  $('im-then').textContent = then ? `Then: ${then.guest_name} — ${then.song.title}` : '';
+  $('im-then').textContent = then ? `Then: ${then.song.title} — ${then.guest_name}` : '';
   $('intermission').hidden = false;
 
   let left = INTERMISSION_SECONDS;
@@ -240,52 +238,18 @@ function floatReaction(payload) {
 }
 
 /**
- * Fullscreen the whole TV *page* (like F11), never YouTube's player, so our
- * overlays (reactions, up-next) still show on top. The queue sidebar keeps
- * whatever state it's in; hide it with the queue button for a full video.
- *
- * Browsers only allow *entering* fullscreen right after a click or key press
- * on this device. So a request from a phone tries, and if the browser says
- * no, the TV shows "click or press any key" and finishes on the next input.
- * Leaving fullscreen needs no click, so phones can always exit.
+ * Fullscreen the whole TV page with the video filling it (sidebar hidden).
+ * Looks like YouTube's fullscreen, but our overlays (reactions, up-next)
+ * still show, which they can't inside YouTube's own fullscreen.
  */
-async function enterFullscreen() {
-  if (document.fullscreenElement) return;
-  try {
-    await document.documentElement.requestFullscreen();
-  } catch {
-    showFullscreenPrompt();
-  }
-}
-
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen();
-  else enterFullscreen();
+  else document.documentElement.requestFullscreen?.().catch(() => toast('Fullscreen isn’t available here.'));
 }
-
-function showFullscreenPrompt() {
-  const prompt = $('fs-prompt');
-  if (!prompt.hidden) return;
-  prompt.hidden = false;
-  const finish = () => {
-    cleanup();
-    document.documentElement.requestFullscreen?.().catch(() => toast('Fullscreen isn’t available in this browser.'));
-  };
-  const cleanup = () => {
-    prompt.hidden = true;
-    clearTimeout(timer);
-    removeEventListener('pointerdown', finish, true);
-    removeEventListener('keydown', finish, true);
-  };
-  addEventListener('pointerdown', finish, true);
-  addEventListener('keydown', finish, true);
-  const timer = setTimeout(cleanup, 20000);   // nobody at the TV — give up quietly
-}
-
 document.addEventListener('fullscreenchange', () => {
-  const on = Boolean(document.fullscreenElement);
-  $('fs-btn').textContent = on ? '✕ Exit fullscreen' : '⛶ Fullscreen';
-  sendState();   // phones' Fullscreen button follows along
+  const on = document.fullscreenElement === document.documentElement;
+  $('app').classList.toggle('fs-mode', on);
+  $('fs-btn').textContent = on ? '✕ Exit fullscreen' : '⛶ Fullscreen + reactions';
 });
 
 /** Apply a remote action (from the TV's own buttons or any phone). */
@@ -293,10 +257,6 @@ function applyAction(action) {
   // Show/hide the queue sidebar works any time, even before a song plays.
   if (action === 'queue') {
     setCollapsed(!$('app').classList.contains('collapsed'));
-    return;
-  }
-  if (action === 'fullscreen') {
-    toggleFullscreen();
     return;
   }
   if (!player || !controller?.state.playing) return;
@@ -355,11 +315,7 @@ function applyAction(action) {
 const isPlaying = () => [1, 3].includes(player?.getPlayerState());   // playing or buffering
 
 function playerState() {
-  const tv = {
-    tv: true,
-    queueOpen: !$('app').classList.contains('collapsed'),
-    fullscreen: Boolean(document.fullscreenElement),
-  };
+  const tv = { tv: true, queueOpen: !$('app').classList.contains('collapsed') };
   if (!player || !controller?.state.playing) return { ...tv, active: false };
   return {
     ...tv,
@@ -406,11 +362,6 @@ function render({ playing, upNext }) {
     setTimeout(sendState, 300);
   }
   $('idle').hidden = Boolean(playing);
-  $('now-playing').hidden = !playing;
-  if (playing) {
-    $('np-guest').textContent = playing.guest_name;
-    $('np-song').textContent = [playing.song.title, playing.song.artist].filter(Boolean).join(' — ');
-  }
 
   $('up-next-count').textContent = upNext.length;
   $('pill-count').textContent = upNext.length;
@@ -474,6 +425,8 @@ function showRoom() {
   $('idle-site').textContent = site;
   document.title = `${name} — ${code}`;
   QRCode.toCanvas($('join-qr'), url, { width: 132, margin: 1 }).catch(console.error);
+  // Bigger copy on the "queue is empty" screen, readable from across the room.
+  QRCode.toCanvas($('idle-qr'), url, { width: 300, margin: 1 }).catch(console.error);
   $('copy-link').addEventListener('click', async () => {
     const how = await shareJoinLink(code);
     if (how === 'copied') toast('Join link copied — paste it in your group chat!');
