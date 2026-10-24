@@ -155,6 +155,7 @@ async function init() {
   $('start-btn').addEventListener('click', start, { once: true });
   $('im-start').addEventListener('click', startNow);
   $('fs-btn').addEventListener('click', toggleFullscreen);
+  wireShield();
 }
 
 async function start() {
@@ -333,6 +334,52 @@ function sendState() {
   const state = playerState();
   updateRemote(state);
   live?.send('state', state);
+  updateShield();
+}
+
+// ------------------------------------------------------------- idle mouse
+
+/*
+ * The page can't reach inside YouTube's player to hide its cursor or its
+ * title bar/controls. So while a song is *playing*, a transparent layer sits
+ * over the video: YouTube never sees the mouse and auto-hides its UI, and the
+ * layer hides the cursor once it's been still for a moment. Clicking lets
+ * the mouse through to YouTube's own controls for a few seconds. Paused or
+ * on the up-next screen, the layer is off, so YouTube works normally.
+ */
+const CURSOR_IDLE_MS = 2500;
+const PASS_THROUGH_MS = 8000;
+let cursorTimer;
+let passThroughUntil = 0;
+
+function updateShield() {
+  const shield = $('player-shield');
+  const on = Boolean(player) && isPlaying() && !intermission && Date.now() >= passThroughUntil;
+  const wasOn = shield.classList.contains('active');
+  shield.classList.toggle('active', on);
+  if (on && !wasOn) armCursorTimer();   // mouse may already be resting on the video
+  if (!on) showCursor();
+}
+
+function showCursor() {
+  clearTimeout(cursorTimer);
+  $('app').classList.remove('cursor-idle');
+}
+
+function armCursorTimer() {
+  showCursor();
+  cursorTimer = setTimeout(() => $('app').classList.add('cursor-idle'), CURSOR_IDLE_MS);
+}
+
+function wireShield() {
+  const shield = $('player-shield');
+  shield.addEventListener('mousemove', armCursorTimer);
+  shield.addEventListener('click', () => {
+    passThroughUntil = Date.now() + PASS_THROUGH_MS;
+    updateShield();
+    toast('YouTube’s player controls are clickable for a few seconds.');
+    setTimeout(updateShield, PASS_THROUGH_MS + 50);
+  });
 }
 
 /** Host passed to someone else (this screen was offline too long). */

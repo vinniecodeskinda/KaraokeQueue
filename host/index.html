@@ -10,6 +10,10 @@
     <div id="app">
       <main class="stage">
         <div class="player-frame"><div id="player"></div></div>
+        <!-- While a song plays: keeps the mouse off YouTube's player (so its title
+             bar and controls auto-hide) and hides the cursor when it's still.
+             Clicking it lets the mouse through to YouTube's controls for a bit. -->
+        <div class="player-shield" id="player-shield"></div>
         <!-- Queue empty: how to join (QR code + room code) -->
         <div class="idle" id="idle">
           <h1>🎤 <span id="idle-name">Karaoke Night</span></h1>
